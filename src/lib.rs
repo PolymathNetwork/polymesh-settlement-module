@@ -71,12 +71,6 @@ pub enum InstructionStatus {
     Unknown,
     /// Instruction is pending execution
     Pending,
-    /// Instruction executed successfully
-    Executed,
-    /// Instruction execution failed
-    Failed,
-    /// Instruction did not receive all CP authorizations
-    Rejected,
 }
 
 impl Default for InstructionStatus {
@@ -92,12 +86,6 @@ pub enum LegStatus {
     PendingTokenLock,
     /// It is waiting execution (tokens currently locked)
     ExecutionPending,
-    /// It was executed successfully
-    ExecutionSuccessful,
-    /// Execution was attempted but failed
-    ExecutionFailed,
-    /// receipt used but not executed yet, (receipt signer, receipt uid)
-    ExecutionSkipped(AccountId, u64),
     /// receipt used, (receipt signer, receipt uid)
     ExecutionToBeSkipped(AccountId, u64),
 }
@@ -270,6 +258,12 @@ decl_event!(
         VenuesAllowed(IdentityId, Ticker, Vec<u64>),
         /// Venues added to block list (did, ticker, vec<venue_id>)
         VenuesBlocked(IdentityId, Ticker, Vec<u64>),
+        /// Execution of a leg failed (Ticker, instruction_id, leg_id)
+        LegFailedExecution(IdentityId, u64, u64),
+        /// Instruction failed execution (ticker, instruction_id)
+        InstructionFailed(IdentityId, u64),
+        /// Instruction executed successfully(ticker, instruction_id)
+        InstructionExecuted(IdentityId, u64),
     }
 );
 
@@ -734,7 +728,7 @@ impl<T: Trait> Module<T> {
     }
 
     /// Settles scheduled instructions
-    fn on_initialize(block_number: T::BlockNumber) -> Weight {
+    pub fn on_initialize(block_number: T::BlockNumber) -> Weight {
         let scheduled_instructions = <ScheduledInstructions<T>>::take(block_number);
         let mut legs_executed: u32 = 0;
         let max_legs = T::MaxScheduledInstructionLegsPerBlock::get();
@@ -748,7 +742,7 @@ impl<T: Trait> Module<T> {
             }
         }
         // TODO fix weight ratio
-        legs_executed.into()
+        10_000 * legs_executed
     }
 
     fn unsafe_unauthorize_instruction(did: IdentityId, instruction_id: u64) -> DispatchResult {
@@ -772,7 +766,7 @@ impl<T: Trait> Module<T> {
                             signer,
                         ));
                     }
-                    LegStatus::ExecutionPending | LegStatus::ExecutionFailed => {
+                    LegStatus::ExecutionPending => {
                         T::Asset::unsafe_decrease_custody_allowance(
                             did,
                             legs[i].asset,
@@ -785,9 +779,6 @@ impl<T: Trait> Module<T> {
                             legs[i].leg_number,
                             LegStatus::PendingTokenLock,
                         );
-                    }
-                    LegStatus::ExecutionSuccessful | LegStatus::ExecutionSkipped(..) => {
-                        return Err(Error::<T>::LegNotPending.into())
                     }
                     LegStatus::PendingTokenLock => {
                         return Err(Error::<T>::InstructionNotAuthorized.into())
@@ -826,12 +817,11 @@ impl<T: Trait> Module<T> {
     }
 
     fn execute_instruction(instruction_id: u64) -> u32 {
-        let instruction_details = Self::instruction_details(instruction_id);
         let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
         let mut instructions_processed: u32 = 0;
         // Instruction rejected.
         if Self::instruction_auths_pending(instruction_id) > 0 {
-            // unlock any locked tokens
+            // unlock any locked tokens and mark receipts as unused
 
             instructions_processed += u32::try_from(legs.len()).unwrap_or_default();
 
@@ -857,7 +847,13 @@ impl<T: Trait> Module<T> {
                     _ => {}
                 }
             }
+            Self::deposit_event(RawEvent::InstructionRejected(
+                SettlementDID.as_id(),
+                instruction_id,
+            ));
         } else {
+            let mut failed = false;
+            // TODO: Implement a way to do the checks before committing changes to storage.
             for i in 0..legs.len() {
                 let status = Self::instruction_leg_status(instruction_id, legs[i].leg_number);
                 if status == LegStatus::ExecutionPending {
@@ -870,6 +866,16 @@ impl<T: Trait> Module<T> {
                     )
                     .is_err()
                     {
+                        failed = true;
+                        Self::deposit_event(RawEvent::LegFailedExecution(
+                            SettlementDID.as_id(),
+                            instruction_id,
+                            legs[i].leg_number,
+                        ));
+                        Self::deposit_event(RawEvent::InstructionFailed(
+                            SettlementDID.as_id(),
+                            instruction_id,
+                        ));
                         //Undo previous legs
                         for j in 0..i {
                             T::Asset::unsafe_system_transfer(
@@ -884,9 +890,20 @@ impl<T: Trait> Module<T> {
                     }
                 }
             }
+            if !failed {
+                Self::deposit_event(RawEvent::InstructionExecuted(
+                    SettlementDID.as_id(),
+                    instruction_id,
+                ));
+            }
         }
 
-        // TODO clean up instruction data
+        <InstructionLegs<T>>::remove_prefix(instruction_id);
+        <InstructionDetails<T>>::remove(instruction_id);
+        <InstructionLegStatus>::remove_prefix(instruction_id);
+        <InstructionAuthsPending>::remove(instruction_id);
+        <AuthsReceived>::remove_prefix(instruction_id);
+        // NB UserAuths mapping is not cleared
         instructions_processed
     }
 }
