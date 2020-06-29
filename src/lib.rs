@@ -40,7 +40,7 @@ use polymesh_primitives::{AccountId, IdentityId, Ticker};
 use codec::{Decode, Encode};
 use frame_support::{
     decl_error, decl_event, decl_module, decl_storage,
-    dispatch::{DispatchError, DispatchResult},
+    dispatch::DispatchResult,
     ensure,
     traits::Get,
     weights::{DispatchClass, FunctionOf, SimpleDispatchInfo, Weight},
@@ -63,7 +63,7 @@ pub trait Trait:
     type MaxScheduledInstructionLegsPerBlock: Get<u32>;
 }
 
-// TODO: add tests
+// TODO add tests
 /// Status of an instruction
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum InstructionStatus {
@@ -486,7 +486,7 @@ decl_module! {
             let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
             for i in 0..legs.len() {
                 if legs[i].from == did {
-                    // TODO: Implement a way to do the checks before committing changes to storage.
+                    // TODO Implement a way to do the checks before committing changes to storage.
                     if T::Asset::unsafe_increase_custody_allowance(
                         did,
                         legs[i].asset,
@@ -516,8 +516,8 @@ decl_module! {
             <InstructionAuthsPending>::insert(instruction_id, auths_pending.saturating_sub(1));
             Self::deposit_event(RawEvent::InstructionAuthorized(did, instruction_id));
 
-            if auths_pending <= 1 {
-                // TODO: execute instruction
+            if auths_pending <= 1 && Self::instruction_details(instruction_id).settlement_type == SettlementType::SettleOnAuthorization {
+                Self::execute_instruction(instruction_id);
             }
 
             Ok(())
@@ -561,6 +561,11 @@ decl_module! {
             // Updates storage
             <UserAuths>::insert(did, instruction_id, AuthorizationStatus::Rejected);
             <AuthsReceived>::insert(instruction_id, did, AuthorizationStatus::Rejected);
+
+            if Self::instruction_details(instruction_id).settlement_type == SettlementType::SettleOnAuthorization {
+                Self::execute_instruction(instruction_id);
+            }
+
             Self::deposit_event(RawEvent::InstructionRejected(did, instruction_id));
             Ok(())
         }
@@ -592,7 +597,7 @@ decl_module! {
                 !Self::receipts_used(&signer, receipt_uid), Error::<T>::ReceiptAlreadyClaimed
             );
 
-            //TODO verify signed data
+            //TODO: verify signed data
 
             let leg = Self::instruction_legs(instruction_id, leg_number);
             ensure!(leg.from == did, Error::<T>::Unauthorized);
@@ -622,7 +627,6 @@ decl_module! {
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
 
             Self::ensure_instruction_validity(instruction_id)?;
-            // TODO: Allow unclaiming when someone else has rejected the instruction.
             if let LegStatus::ExecutionToBeSkipped(signer, receipt_uid) = Self::instruction_leg_status(instruction_id, leg_number) {
                 let leg = Self::instruction_legs(instruction_id, leg_number);
                 ensure!(leg.from == did, Error::<T>::Unauthorized);
@@ -741,7 +745,6 @@ impl<T: Trait> Module<T> {
                 break;
             }
         }
-        // TODO fix weight ratio
         10_000 * legs_executed
     }
 
@@ -853,7 +856,7 @@ impl<T: Trait> Module<T> {
             ));
         } else {
             let mut failed = false;
-            // TODO: Implement a way to do the checks before committing changes to storage.
+            // TODO Implement a way to do the checks before committing changes to storage.
             for i in 0..legs.len() {
                 let status = Self::instruction_leg_status(instruction_id, legs[i].leg_number);
                 if status == LegStatus::ExecutionPending {
