@@ -570,6 +570,8 @@ decl_module! {
             Ok(())
         }
 
+        // TODO: Add add_offchain_auth
+
         /// Claims a signed receipt.
         ///
         /// # Arguments
