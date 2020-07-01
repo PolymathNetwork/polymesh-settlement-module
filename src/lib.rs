@@ -503,8 +503,19 @@ decl_module! {
                                 SettlementDID.as_id(),
                                 legs[j].amount
                             );
+                            <InstructionLegStatus<T>>::insert(
+                                instruction_id,
+                                legs[i].leg_number,
+                                LegStatus::PendingTokenLock,
+                            );
                         }
                         return Err(Error::<T>::FailedToTakeCustodialOwnership.into());
+                    } else {
+                        <InstructionLegStatus<T>>::insert(
+                            instruction_id,
+                            legs[i].leg_number,
+                            LegStatus::ExecutionPending,
+                        );
                     }
                 }
             }
