@@ -35,7 +35,7 @@ use polymesh_common_utilities::{
     Context,
     SystematicIssuers::Settlement as SettlementDID,
 };
-use polymesh_primitives::{AccountId, IdentityId, Ticker};
+use polymesh_primitives::{IdentityId, Ticker};
 
 use codec::{Decode, Encode};
 use frame_support::{
@@ -81,7 +81,7 @@ impl Default for InstructionStatus {
 
 /// Status of a leg
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum LegStatus {
+pub enum LegStatus<AccountId> {
     /// It is waiting for authorization
     PendingTokenLock,
     /// It is waiting execution (tokens currently locked)
@@ -90,7 +90,7 @@ pub enum LegStatus {
     ExecutionToBeSkipped(AccountId, u64),
 }
 
-impl Default for LegStatus {
+impl<AccountId> Default for LegStatus<AccountId> {
     fn default() -> Self {
         Self::PendingTokenLock
     }
@@ -117,14 +117,14 @@ impl Default for AuthorizationStatus {
 
 /// Type of settlement
 #[derive(Encode, Decode, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SettlementType<T> {
+pub enum SettlementType<BlockNumber> {
     /// Instruction should be settled as soon as all authorizations are received
     SettleOnAuthorization,
     /// Instruction should be settled on a particular block
-    SettleOnBlock(T),
+    SettleOnBlock(BlockNumber),
 }
 
-impl<T> Default for SettlementType<T> {
+impl<BlockNumber> Default for SettlementType<BlockNumber> {
     fn default() -> Self {
         Self::SettleOnAuthorization
     }
@@ -132,51 +132,51 @@ impl<T> Default for SettlementType<T> {
 
 /// Details about an instruction
 #[derive(Encode, Decode, Default, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
-pub struct Instruction<T, U> {
+pub struct Instruction<Moment, BlockNumber> {
     /// Unique instruction id. It is an auto incrementing number
-    instruction_id: u64,
+    pub instruction_id: u64,
     /// Id of the venue this instruction belongs to
-    venue_id: u64,
+    pub venue_id: u64,
     /// Status of the instruction
-    status: InstructionStatus,
+    pub status: InstructionStatus,
     /// Type of settlement used for this instruction
-    settlement_type: SettlementType<U>,
+    pub settlement_type: SettlementType<BlockNumber>,
     /// Date at which this instruction was created
-    created_at: Option<T>,
+    pub created_at: Option<Moment>,
     /// Date from which this instruction is valid
-    valid_from: Option<T>,
+    pub valid_from: Option<Moment>,
 }
 
 /// Details of a leg that the user needs to submit while creating an instruction
 #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
-pub struct LegDetails<T> {
+pub struct LegDetails<Balance> {
     /// Identity of the sender
-    from: IdentityId,
+    pub from: IdentityId,
     /// Identity of the receiver
-    to: IdentityId,
+    pub to: IdentityId,
     /// Ticker of the asset being transferred
-    asset: Ticker,
+    pub asset: Ticker,
     /// Amount being transferred
-    amount: T,
+    pub amount: Balance,
 }
 
 /// Details of a leg including the leg number in the instruction
 #[derive(Encode, Decode, Default, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
-pub struct Leg<T> {
+pub struct Leg<Balance> {
     /// leg number in the instruction
-    leg_number: u64,
+    pub leg_number: u64,
     /// Identity of the sender
-    from: IdentityId,
+    pub from: IdentityId,
     /// Identity of the receiver
-    to: IdentityId,
+    pub to: IdentityId,
     /// Ticker of the asset being transferred
-    asset: Ticker,
+    pub asset: Ticker,
     /// Amount being transferred
-    amount: T,
+    pub amount: Balance,
 }
 
-impl<T> Leg<T> {
-    pub fn new(leg_number: u64, leg: LegDetails<T>) -> Self {
+impl<Balance> Leg<Balance> {
+    pub fn new(leg_number: u64, leg: LegDetails<Balance>) -> Self {
         Leg {
             leg_number,
             from: leg.from,
@@ -191,11 +191,11 @@ impl<T> Leg<T> {
 #[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub struct Venue {
     /// Identity of the venue's creator
-    creator: IdentityId,
+    pub creator: IdentityId,
     /// instructions under this venue (Only needed for the UI)
-    instructions: Vec<u64>,
+    pub instructions: Vec<u64>,
     /// Additional details about this venue
-    details: Vec<u8>,
+    pub details: Vec<u8>,
 }
 
 impl Venue {
@@ -210,17 +210,17 @@ impl Venue {
 
 /// Details about an offchain transaction receipt
 #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
-pub struct Receipt<T> {
+pub struct Receipt<Balance> {
     /// Unique receipt number set by the signer for their receipts
-    receipt_uid: u64,
+    pub receipt_uid: u64,
     /// Identity of the sender
-    from: IdentityId,
+    pub from: IdentityId,
     /// Identity of the receiver
-    to: IdentityId,
+    pub to: IdentityId,
     /// Ticker of the asset being transferred
-    asset: Ticker,
+    pub asset: Ticker,
     /// Amount being transferred
-    amount: T,
+    pub amount: Balance,
 }
 
 decl_event!(
@@ -229,6 +229,7 @@ decl_event!(
         Balance = <T as CommonTrait>::Balance,
         Moment = <T as pallet_timestamp::Trait>::Moment,
         BlockNumber = <T as frame_system::Trait>::BlockNumber,
+        AccountId = <T as frame_system::Trait>::AccountId,
     {
         /// A new venue has been created (did, venue_id)
         VenueCreated(IdentityId, u64),
@@ -306,13 +307,13 @@ decl_storage! {
         /// Info about a venue. venue_id -> venue_details
         VenueInfo get(fn venue_info): map hasher(twox_64_concat) u64 => Venue;
         /// Signers authorized by the venue. (venue_id, signer) -> authorized_bool
-        VenueSigners get(fn venue_signers): double_map hasher(twox_64_concat) u64, hasher(twox_64_concat) AccountId => bool;
+        VenueSigners get(fn venue_signers): double_map hasher(twox_64_concat) u64, hasher(twox_64_concat) T::AccountId => bool;
         /// Details about an instruction. instruction_id -> instruction_details
         InstructionDetails get(fn instruction_details): map hasher(twox_64_concat) u64 => Instruction<T::Moment, T::BlockNumber>;
         /// Legs under an instruction. (instruction_id, leg_number) -> Leg
         InstructionLegs get(fn instruction_legs): double_map hasher(twox_64_concat) u64, hasher(twox_64_concat) u64 => Leg<T::Balance>;
         /// Status of a leg under an instruction. (instruction_id, leg_number) -> LegStatus
-        InstructionLegStatus get(fn instruction_leg_status): double_map hasher(twox_64_concat) u64, hasher(twox_64_concat) u64 => LegStatus;
+        InstructionLegStatus get(fn instruction_leg_status): double_map hasher(twox_64_concat) u64, hasher(twox_64_concat) u64 => LegStatus<T::AccountId>;
         /// Number of authorizations pending before instruction is executed. instruction_id -> auths_pending
         InstructionAuthsPending get(fn instruction_auths_pending): map hasher(twox_64_concat) u64 => u64;
         /// Tracks authorizations received for an instruction. (instruction_id, counter_party) -> AuthorizationStatus
@@ -321,7 +322,7 @@ decl_storage! {
         /// (counter_party, instruction_id) -> AuthorizationStatus
         UserAuths get(fn user_auths): double_map hasher(twox_64_concat) IdentityId, hasher(twox_64_concat) u64 => AuthorizationStatus;
         /// Tracks redemption of receipts. (signer, receipt_uid) -> receipt_used
-        ReceiptsUsed get(fn receipts_used): double_map hasher(twox_64_concat) AccountId, hasher(blake2_128_concat) u64 => bool;
+        ReceiptsUsed get(fn receipts_used): double_map hasher(twox_64_concat) T::AccountId, hasher(blake2_128_concat) u64 => bool;
         /// Tracks if a token has enabled filtering venues that can create instructions involving their token. Ticker -> filtering_enabled
         VenueFiltering get(fn venue_filtering): map hasher(blake2_128_concat) Ticker => bool;
         /// Venues that are allowed to create instructions involving a particular ticker. Oly used if filtering is enabled.
@@ -354,21 +355,21 @@ decl_module! {
         /// `200_000 + 50_000 * signers.len()`
         #[weight = FunctionOf(
             |(_, signers): (
-                &Vec<u8>, &Vec<AccountId>,
+                &Vec<u8>, &Vec<T::AccountId>,
             )| {
                 200_000 + 50_000 * u32::try_from(signers.len()).unwrap_or_default()
             },
             DispatchClass::Normal,
             true
         )]
-        pub fn create_venue(origin, details: Vec<u8>, signers: Vec<AccountId>) -> DispatchResult {
+        pub fn create_venue(origin, details: Vec<u8>, signers: Vec<T::AccountId>) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
             let venue = Venue::new(did, details);
             let venue_counter = Self::venue_counter();
             <VenueInfo>::insert(venue_counter, venue);
             for signer in signers {
-                <VenueSigners>::insert(venue_counter, signer, true);
+                <VenueSigners<T>>::insert(venue_counter, signer, true);
             }
             <VenueCounter>::put(venue_counter + 1);
             Self::deposit_event(RawEvent::VenueCreated(did, venue_counter));
@@ -581,7 +582,7 @@ decl_module! {
         /// * `signer` - Signer of the receipt.
         /// * `signed_data` - Signed receipt.
         #[weight = SimpleDispatchInfo::FixedNormal(2_000_000)]
-        pub fn claim_receipt(origin, instruction_id: u64, leg_number: u64, receipt_uid: u64, signer: AccountId /*signed_data*/) -> DispatchResult {
+        pub fn claim_receipt(origin, instruction_id: u64, leg_number: u64, receipt_uid: u64, signer: T::AccountId /*signed_data*/) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
 
@@ -611,9 +612,9 @@ decl_module! {
                 leg.amount
             );
 
-            <ReceiptsUsed>::insert(&signer, receipt_uid, true);
+            <ReceiptsUsed<T>>::insert(&signer, receipt_uid, true);
 
-            <InstructionLegStatus>::insert(instruction_id, leg_number, LegStatus::ExecutionToBeSkipped(signer.clone(), receipt_uid));
+            <InstructionLegStatus<T>>::insert(instruction_id, leg_number, LegStatus::ExecutionToBeSkipped(signer.clone(), receipt_uid));
             Self::deposit_event(RawEvent::ReceiptClaimed(did, instruction_id, leg_number, receipt_uid, signer));
             Ok(())
         }
@@ -639,8 +640,8 @@ decl_module! {
                     SettlementDID.as_id(),
                     leg.amount
                 )?;
-                <ReceiptsUsed>::insert(&signer, receipt_uid, false);
-                <InstructionLegStatus>::insert(instruction_id, leg_number, LegStatus::ExecutionPending);
+                <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
+                <InstructionLegStatus<T>>::insert(instruction_id, leg_number, LegStatus::ExecutionPending);
                 Self::deposit_event(RawEvent::ReceiptUnclaimed(did, instruction_id, leg_number, receipt_uid, signer));
                 Ok(())
             } else {
@@ -757,8 +758,8 @@ impl<T: Trait> Module<T> {
             if legs[i].from == did {
                 match Self::instruction_leg_status(instruction_id, legs[i].leg_number) {
                     LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
-                        <ReceiptsUsed>::insert(&signer, receipt_uid, false);
-                        <InstructionLegStatus>::insert(
+                        <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
+                        <InstructionLegStatus<T>>::insert(
                             instruction_id,
                             legs[i].leg_number,
                             LegStatus::PendingTokenLock,
@@ -779,7 +780,7 @@ impl<T: Trait> Module<T> {
                             SettlementDID.as_id(),
                             legs[i].amount,
                         );
-                        <InstructionLegStatus>::insert(
+                        <InstructionLegStatus<T>>::insert(
                             instruction_id,
                             legs[i].leg_number,
                             LegStatus::PendingTokenLock,
@@ -833,7 +834,7 @@ impl<T: Trait> Module<T> {
             for leg in legs {
                 match Self::instruction_leg_status(instruction_id, leg.leg_number) {
                     LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
-                        <ReceiptsUsed>::insert(&signer, receipt_uid, false);
+                        <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
                         Self::deposit_event(RawEvent::ReceiptUnclaimed(
                             SettlementDID.as_id(),
                             instruction_id,
@@ -905,7 +906,7 @@ impl<T: Trait> Module<T> {
 
         <InstructionLegs<T>>::remove_prefix(instruction_id);
         <InstructionDetails<T>>::remove(instruction_id);
-        <InstructionLegStatus>::remove_prefix(instruction_id);
+        <InstructionLegStatus<T>>::remove_prefix(instruction_id);
         <InstructionAuthsPending>::remove(instruction_id);
         <AuthsReceived>::remove_prefix(instruction_id);
         // NB UserAuths mapping is not cleared

@@ -9,6 +9,7 @@ use pallet_asset::{
 use pallet_balances as balances;
 use pallet_compliance_manager as compliance_manager;
 use pallet_identity as identity;
+use pallet_settlement as settlement;
 use polymesh_common_utilities::{
     constants::*, traits::asset::IssueAssetItem, traits::balances::Memo,
 };
@@ -39,101 +40,55 @@ type AssetError = asset::Error<TestStorage>;
 type OffChainSignature = AnySignature;
 type Origin = <TestStorage as frame_system::Trait>::Origin;
 type DidRecords = identity::DidRecords<TestStorage>;
+type Settlement = settlement::Module<TestStorage>;
 
 #[test]
-fn issuers_can_create_and_rename_tokens() {
+fn venue_registration() {
     ExtBuilder::default().build().execute_with(|| {
-        let (owner_signed, owner_did) = make_account(AccountKeyring::Dave.public()).unwrap();
-        let funding_round_name: FundingRoundName = b"round1".into();
-        // Expected token entry
-        let mut token = SecurityToken {
-            name: vec![0x01].into(),
-            owner_did,
-            total_supply: 1_000_000,
-            divisible: true,
-            asset_type: AssetType::default(),
-            ..Default::default()
-        };
-        let ticker = Ticker::try_from(token.name.as_slice()).unwrap();
-        assert!(!<DidRecords>::contains_key(
-            Identity::get_token_did(&ticker).unwrap()
+        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
+        let venue_counter = Settlement::venue_counter();
+        assert_ok!(Settlement::create_venue(
+            alice_signed,
+            vec![13],
+            vec![AccountKeyring::Alice.public(), AccountKeyring::Bob.public()]
         ));
-        let identifiers = vec![(IdentifierType::default(), b"undefined".into())];
-        let ticker = Ticker::try_from(token.name.as_slice()).unwrap();
-        assert_err!(
-            Asset::create_asset(
-                owner_signed.clone(),
-                token.name.clone(),
-                ticker,
-                1_000_000_000_000_000_000_000_000, // Total supply over the limit
-                true,
-                token.asset_type.clone(),
-                identifiers.clone(),
-                Some(funding_round_name.clone()),
-            ),
-            AssetError::TotalSupplyAboveLimit
+        let venue_info = Settlement::venue_info(venue_counter);
+        assert_eq!(Settlement::venue_counter(), venue_counter + 1);
+        assert_eq!(venue_info.creator, alice_did);
+        assert_eq!(venue_info.instructions.len(), 0);
+        assert_eq!(venue_info.details, vec![13]);
+        assert_eq!(
+            Settlement::venue_signers(venue_counter, AccountKeyring::Alice.public()),
+            true
         );
+        assert_eq!(
+            Settlement::venue_signers(venue_counter, AccountKeyring::Bob.public()),
+            true
+        );
+        assert_eq!(
+            Settlement::venue_signers(venue_counter, AccountKeyring::Charlie.public()),
+            false
+        );
+    });
+}
 
-        // Issuance is successful
+#[test]
+fn basic_settlement() {
+    ExtBuilder::default().build().execute_with(|| {
+        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
+        let (dave_signed, dave_did) = make_account(AccountKeyring::Dave.public()).unwrap();
+
+        let token_name = b"ACME";
+        let ticker = Ticker::try_from(&token_name[..]).unwrap();
         assert_ok!(Asset::create_asset(
-            owner_signed.clone(),
-            token.name.clone(),
+            dave_signed.clone(),
+            token_name.into(),
             ticker,
-            token.total_supply,
+            100_000,
             true,
-            token.asset_type.clone(),
-            identifiers.clone(),
-            Some(funding_round_name.clone())
+            AssetType::default(),
+            vec![],
+            None
         ));
-
-        let token_link = Identity::get_link(
-            Signatory::from(owner_did),
-            Asset::token_details(ticker).link_id,
-        );
-        assert_eq!(token_link.link_data, LinkData::AssetOwned(ticker));
-        assert_eq!(token_link.expiry, None);
-
-        let ticker_link = Identity::get_link(
-            Signatory::from(owner_did),
-            Asset::ticker_registration(ticker).link_id,
-        );
-
-        assert_eq!(ticker_link.link_data, LinkData::TickerOwned(ticker));
-        assert_eq!(ticker_link.expiry, None);
-
-        token.link_id = Asset::token_details(ticker).link_id;
-        // A correct entry is added
-        assert_eq!(Asset::token_details(ticker), token);
-        assert!(<DidRecords>::contains_key(
-            Identity::get_token_did(&ticker).unwrap()
-        ));
-        assert_eq!(Asset::funding_round(ticker), funding_round_name.clone());
-
-        // Unauthorized identities cannot rename the token.
-        let (eve_signed, _eve_did) = make_account(AccountKeyring::Eve.public()).unwrap();
-        assert_err!(
-            Asset::rename_asset(eve_signed, ticker, vec![0xde, 0xad, 0xbe, 0xef].into()),
-            AssetError::Unauthorized
-        );
-        // The token should remain unchanged in storage.
-        assert_eq!(Asset::token_details(ticker), token);
-        // Rename the token and check storage has been updated.
-        let renamed_token = SecurityToken {
-            name: vec![0x42].into(),
-            owner_did: token.owner_did,
-            total_supply: token.total_supply,
-            divisible: token.divisible,
-            asset_type: token.asset_type.clone(),
-            link_id: Asset::token_details(ticker).link_id,
-        };
-        assert_ok!(Asset::rename_asset(
-            owner_signed.clone(),
-            ticker,
-            renamed_token.name.clone()
-        ));
-        assert_eq!(Asset::token_details(ticker), renamed_token);
-        for (typ, val) in identifiers {
-            assert_eq!(Asset::identifiers((ticker, typ)), val);
-        }
     });
 }
