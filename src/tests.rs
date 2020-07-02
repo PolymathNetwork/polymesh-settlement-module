@@ -325,6 +325,7 @@ fn init(token_name: &[u8], ticker: Ticker, keyring: Public) -> u64 {
         true,
         AssetType::default(),
         vec![],
+        None,
         None
     ));
     assert_ok!(ComplianceManager::add_active_rule(
