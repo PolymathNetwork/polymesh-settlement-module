@@ -583,6 +583,7 @@ decl_module! {
         }
 
         // TODO: Add add_offchain_auth
+        // TODO: Add authorize_with_receipt
 
         /// Claims a signed receipt.
         ///
