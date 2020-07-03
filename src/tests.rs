@@ -11,7 +11,7 @@ use pallet_compliance_manager as compliance_manager;
 use pallet_identity as identity;
 use pallet_settlement::{
     self as settlement, AuthorizationStatus, Instruction, InstructionStatus, Leg, LegDetails,
-    LegStatus, SettlementType,
+    LegStatus, Receipt, SettlementType,
 };
 use polymesh_common_utilities::{
     constants::*, traits::asset::IssueAssetItem, traits::balances::Memo,
@@ -444,13 +444,22 @@ fn claiming_receipt() {
         assert_eq!(Asset::balance_of(&ticker2, alice_did), alice_init_balance2);
         assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
 
+        let msg = Receipt {
+            receipt_uid: 0,
+            from: alice_did,
+            to: bob_did,
+            asset: ticker,
+            amount: amount,
+        };
+
         assert_err!(
             Settlement::claim_receipt(
                 alice_signed.clone(),
                 instruction_counter,
                 0,
                 0,
-                AccountKeyring::Alice.public()
+                AccountKeyring::Alice.public(),
+                OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
             ),
             Error::LegNotPending
         );
@@ -503,13 +512,34 @@ fn claiming_receipt() {
         assert_eq!(Asset::balance_of(&ticker2, alice_did), alice_init_balance2);
         assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
 
+        let msg2 = Receipt {
+            receipt_uid: 0,
+            from: alice_did,
+            to: alice_did,
+            asset: ticker,
+            amount: amount,
+        };
+
+        assert_err!(
+            Settlement::claim_receipt(
+                alice_signed.clone(),
+                instruction_counter,
+                0,
+                0,
+                AccountKeyring::Alice.public(),
+                OffChainSignature::from(AccountKeyring::Alice.sign(&msg2.encode()))
+            ),
+            Error::InvalidSignature
+        );
+
         // Claiming, unclaiming and claiming receipt
         assert_ok!(Settlement::claim_receipt(
             alice_signed.clone(),
             instruction_counter,
             0,
             0,
-            AccountKeyring::Alice.public()
+            AccountKeyring::Alice.public(),
+            OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
         ));
 
         assert_eq!(
@@ -599,12 +629,14 @@ fn claiming_receipt() {
         assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
         assert_eq!(Asset::balance_of(&ticker2, alice_did), alice_init_balance2);
         assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
+
         assert_ok!(Settlement::claim_receipt(
             alice_signed.clone(),
             instruction_counter,
             0,
             0,
-            AccountKeyring::Alice.public()
+            AccountKeyring::Alice.public(),
+            OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
         ));
 
         assert_eq!(

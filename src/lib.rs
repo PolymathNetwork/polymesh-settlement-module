@@ -46,7 +46,7 @@ use frame_support::{
     weights::{DispatchClass, FunctionOf, SimpleDispatchInfo, Weight},
 };
 use frame_system::{self as system, ensure_signed};
-use sp_runtime::traits::AccountIdConversion;
+use sp_runtime::traits::{AccountIdConversion, Verify};
 use sp_std::{convert::TryFrom, prelude::*};
 
 type Identity<T> = identity::Module<T>;
@@ -298,7 +298,9 @@ decl_error! {
         /// Instruction's target settle block reached
         InstructionSettleBlockPassed,
         /// Instruction waiting for settle block
-        InstructionWaitingSettleBlock
+        InstructionWaitingSettleBlock,
+        /// Offchain signature is invalid
+        InvalidSignature
     }
 }
 
@@ -543,7 +545,7 @@ decl_module! {
         /// * `signer` - Signer of the receipt.
         /// * `signed_data` - Signed receipt.
         #[weight = SimpleDispatchInfo::FixedNormal(1_000_000)]
-        pub fn authorize_with_receipt(origin, instruction_id: u64, leg_number: u64, receipt_uid: u64, signer: T::AccountId /*signed_data*/) -> DispatchResult {
+        pub fn authorize_with_receipt(origin, instruction_id: u64, leg_number: u64, receipt_uid: u64, signer: T::AccountId, signature: T::OffChainSignature) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
             Self::ensure_instruction_validity(instruction_id)?;
@@ -564,10 +566,21 @@ decl_module! {
                 !Self::receipts_used(&signer, receipt_uid), Error::<T>::ReceiptAlreadyClaimed
             );
 
-            //TODO: verify signed data
-
             let leg = Self::instruction_legs(instruction_id, leg_number);
             ensure!(leg.from == did, Error::<T>::Unauthorized);
+
+            let msg = Receipt {
+                receipt_uid: receipt_uid,
+                from: leg.from,
+                to: leg.to,
+                asset: leg.asset,
+                amount: leg.amount
+            };
+
+            ensure!(
+                signature.verify(&msg.encode()[..], &signer),
+                Error::<T>::InvalidSignature
+            );
 
             // lock tokens
             let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
@@ -639,11 +652,11 @@ decl_module! {
         /// * `signer` - Signer of the receipt.
         /// * `signed_data` - Signed receipt.
         #[weight = SimpleDispatchInfo::FixedNormal(1_000_000)]
-        pub fn claim_receipt(origin, instruction_id: u64, leg_number: u64, receipt_uid: u64, signer: T::AccountId /*signed_data*/) -> DispatchResult {
+        pub fn claim_receipt(origin, instruction_id: u64, leg_number: u64, receipt_uid: u64, signer: T::AccountId, signature: T::OffChainSignature) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
 
-            Self::unsafe_claim_receipt(did, instruction_id, leg_number, receipt_uid, signer)
+            Self::unsafe_claim_receipt(did, instruction_id, leg_number, receipt_uid, signer, signature)
         }
 
         /// Unclaims a previously claimed receipt.
@@ -1006,7 +1019,8 @@ impl<T: Trait> Module<T> {
         instruction_id: u64,
         leg_number: u64,
         receipt_uid: u64,
-        signer: T::AccountId, /*signed_data*/
+        signer: T::AccountId,
+        signature: T::OffChainSignature,
     ) -> DispatchResult {
         Self::ensure_instruction_validity(instruction_id)?;
 
@@ -1024,10 +1038,22 @@ impl<T: Trait> Module<T> {
             Error::<T>::ReceiptAlreadyClaimed
         );
 
-        //TODO: verify signed data
-
         let leg = Self::instruction_legs(instruction_id, leg_number);
         ensure!(leg.from == did, Error::<T>::Unauthorized);
+
+        let msg = Receipt {
+            receipt_uid: receipt_uid,
+            from: leg.from,
+            to: leg.to,
+            asset: leg.asset,
+            amount: leg.amount,
+        };
+
+        ensure!(
+            signature.verify(&msg.encode()[..], &signer),
+            Error::<T>::InvalidSignature
+        );
+
         T::Asset::unsafe_decrease_custody_allowance(
             did,
             leg.asset,
