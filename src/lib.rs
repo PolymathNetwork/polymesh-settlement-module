@@ -259,12 +259,14 @@ decl_event!(
         VenuesAllowed(IdentityId, Ticker, Vec<u64>),
         /// Venues added to block list (did, ticker, vec<venue_id>)
         VenuesBlocked(IdentityId, Ticker, Vec<u64>),
-        /// Execution of a leg failed (Ticker, instruction_id, leg_id)
+        /// Execution of a leg failed (did, instruction_id, leg_id)
         LegFailedExecution(IdentityId, u64, u64),
-        /// Instruction failed execution (ticker, instruction_id)
+        /// Instruction failed execution (did, instruction_id)
         InstructionFailed(IdentityId, u64),
-        /// Instruction executed successfully(ticker, instruction_id)
+        /// Instruction executed successfully(did, instruction_id)
         InstructionExecuted(IdentityId, u64),
+        /// Venue unauthorized by ticker owner (did, Ticker, venue_id)
+        VenueUnauthorized(IdentityId, Ticker, u64),
     }
 );
 
@@ -300,7 +302,7 @@ decl_error! {
         /// Instruction waiting for settle block
         InstructionWaitingSettleBlock,
         /// Offchain signature is invalid
-        InvalidSignature
+        InvalidSignature,
     }
 }
 
@@ -900,75 +902,99 @@ impl<T: Trait> Module<T> {
             ));
         } else {
             let mut failed = false;
-            // TODO Implement a way to do the checks before committing changes to storage.
+            let mut tickers = Vec::with_capacity(legs.len());
             for i in 0..legs.len() {
-                let status = Self::instruction_leg_status(instruction_id, legs[i].leg_number);
-                if status == LegStatus::ExecutionPending {
-                    if T::Asset::unsafe_transfer_by_custodian(
-                        SettlementDID.as_id(),
-                        legs[i].asset,
-                        legs[i].from,
-                        legs[i].to,
-                        legs[i].amount,
-                    )
-                    .is_err()
-                    {
+                tickers.push(legs[i].asset);
+            }
+            tickers.sort();
+            tickers.dedup();
+            let venue_id = Self::instruction_details(instruction_id).venue_id;
+            for ticker in &tickers {
+                if Self::venue_filtering(ticker) {
+                    if !Self::venue_allow_list(ticker, venue_id) {
                         failed = true;
-                        Self::deposit_event(RawEvent::LegFailedExecution(
+                        Self::deposit_event(RawEvent::VenueUnauthorized(
                             SettlementDID.as_id(),
-                            instruction_id,
-                            legs[i].leg_number,
+                            *ticker,
+                            venue_id,
                         ));
-                        Self::deposit_event(RawEvent::InstructionFailed(
-                            SettlementDID.as_id(),
-                            instruction_id,
-                        ));
-
-                        for j in 0..legs.len() {
-                            match Self::instruction_leg_status(instruction_id, legs[j].leg_number) {
-                                LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
-                                    <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
-                                    Self::deposit_event(RawEvent::ReceiptUnclaimed(
-                                        SettlementDID.as_id(),
-                                        instruction_id,
-                                        legs[j].leg_number,
-                                        receipt_uid,
-                                        signer,
-                                    ));
-                                }
-                                LegStatus::ExecutionPending => {
-                                    if j < i {
-                                        // Undo previous legs
-                                        T::Asset::unsafe_system_transfer(
-                                            SettlementDID.as_id(),
-                                            &legs[j].asset,
-                                            legs[j].to,
-                                            legs[j].from,
-                                            legs[j].amount,
-                                        );
-                                    } else {
-                                        // Remove custodian allowance
-                                        T::Asset::unsafe_decrease_custody_allowance(
-                                            SettlementDID.as_id(),
-                                            legs[j].asset,
-                                            legs[j].from,
-                                            SettlementDID.as_id(),
-                                            legs[j].amount,
-                                        );
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        break;
                     }
                 }
             }
+            // TODO Implement a way to do the checks before committing changes to storage.
             if !failed {
-                Self::deposit_event(RawEvent::InstructionExecuted(
-                    SettlementDID.as_id(),
-                    instruction_id,
-                ));
+                for i in 0..legs.len() {
+                    let status = Self::instruction_leg_status(instruction_id, legs[i].leg_number);
+                    if status == LegStatus::ExecutionPending {
+                        if T::Asset::unsafe_transfer_by_custodian(
+                            SettlementDID.as_id(),
+                            legs[i].asset,
+                            legs[i].from,
+                            legs[i].to,
+                            legs[i].amount,
+                        )
+                        .is_err()
+                        {
+                            failed = true;
+                            Self::deposit_event(RawEvent::LegFailedExecution(
+                                SettlementDID.as_id(),
+                                instruction_id,
+                                legs[i].leg_number,
+                            ));
+                            Self::deposit_event(RawEvent::InstructionFailed(
+                                SettlementDID.as_id(),
+                                instruction_id,
+                            ));
+
+                            for j in 0..legs.len() {
+                                match Self::instruction_leg_status(
+                                    instruction_id,
+                                    legs[j].leg_number,
+                                ) {
+                                    LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
+                                        <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
+                                        Self::deposit_event(RawEvent::ReceiptUnclaimed(
+                                            SettlementDID.as_id(),
+                                            instruction_id,
+                                            legs[j].leg_number,
+                                            receipt_uid,
+                                            signer,
+                                        ));
+                                    }
+                                    LegStatus::ExecutionPending => {
+                                        if j < i {
+                                            // Undo previous legs
+                                            T::Asset::unsafe_system_transfer(
+                                                SettlementDID.as_id(),
+                                                &legs[j].asset,
+                                                legs[j].to,
+                                                legs[j].from,
+                                                legs[j].amount,
+                                            );
+                                        } else {
+                                            // Remove custodian allowance
+                                            T::Asset::unsafe_decrease_custody_allowance(
+                                                SettlementDID.as_id(),
+                                                legs[j].asset,
+                                                legs[j].from,
+                                                SettlementDID.as_id(),
+                                                legs[j].amount,
+                                            );
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                if !failed {
+                    Self::deposit_event(RawEvent::InstructionExecuted(
+                        SettlementDID.as_id(),
+                        instruction_id,
+                    ));
+                }
             }
         }
 

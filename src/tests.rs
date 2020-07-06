@@ -1248,3 +1248,83 @@ fn failed_execution() {
         assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
     });
 }
+
+#[test]
+fn venue_filtering() {
+    ExtBuilder::default().build().execute_with(|| {
+        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
+        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let token_name = b"ACME";
+        let ticker = Ticker::try_from(&token_name[..]).unwrap();
+        let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
+        let block_number = System::block_number() + 1;
+        let instruction_counter = Settlement::instruction_counter();
+
+        let leg_details = vec![LegDetails {
+            from: alice_did,
+            to: bob_did,
+            asset: ticker,
+            amount: 10,
+        }];
+        assert_ok!(Settlement::add_instruction(
+            alice_signed.clone(),
+            venue_counter,
+            SettlementType::SettleOnBlock(block_number),
+            None,
+            leg_details.clone()
+        ));
+        assert_ok!(Settlement::set_venue_filtering(
+            alice_signed.clone(),
+            ticker,
+            true
+        ));
+        assert_err!(
+            Settlement::add_instruction(
+                alice_signed.clone(),
+                venue_counter,
+                SettlementType::SettleOnBlock(block_number),
+                None,
+                leg_details.clone()
+            ),
+            Error::UnauthorizedVenue
+        );
+        assert_ok!(Settlement::allow_venues(
+            alice_signed.clone(),
+            ticker,
+            vec![venue_counter]
+        ));
+        assert_ok!(Settlement::add_instruction(
+            alice_signed.clone(),
+            venue_counter,
+            SettlementType::SettleOnBlock(block_number + 1),
+            None,
+            leg_details.clone()
+        ));
+        assert_ok!(Settlement::authorize_instruction(
+            alice_signed.clone(),
+            instruction_counter,
+        ));
+        assert_ok!(Settlement::authorize_instruction(
+            alice_signed.clone(),
+            instruction_counter + 1,
+        ));
+        assert_ok!(Settlement::authorize_instruction(
+            bob_signed.clone(),
+            instruction_counter,
+        ));
+        assert_ok!(Settlement::authorize_instruction(
+            bob_signed.clone(),
+            instruction_counter + 1,
+        ));
+        next_block();
+        assert_eq!(Asset::balance_of(&ticker, bob_did), 10);
+        assert_ok!(Settlement::disallow_venues(
+            alice_signed.clone(),
+            ticker,
+            vec![venue_counter]
+        ));
+        next_block();
+        // Second instruction fails to settle due to venue being not whitelisted
+        assert_eq!(Asset::balance_of(&ticker, bob_did), 10);
+    });
+}
