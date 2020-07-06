@@ -63,7 +63,7 @@ pub trait Trait:
     type MaxScheduledInstructionLegsPerBlock: Get<u32>;
 }
 
-// TODO add tests
+// TODO add more tests
 /// Status of an instruction
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum InstructionStatus {
@@ -836,7 +836,8 @@ impl<T: Trait> Module<T> {
         // Updates storage
         <UserAuths>::insert(did, instruction_id, AuthorizationStatus::Pending);
         <AuthsReceived>::remove(instruction_id, did);
-        <InstructionAuthsPending>::mutate(instruction_id, |auths_pending| *auths_pending + 1);
+        <InstructionAuthsPending>::mutate(instruction_id, |auths_pending| *auths_pending += 1);
+
         Self::deposit_event(RawEvent::InstructionUnauthorized(did, instruction_id));
         Ok(())
     }
@@ -922,15 +923,42 @@ impl<T: Trait> Module<T> {
                             SettlementDID.as_id(),
                             instruction_id,
                         ));
-                        //Undo previous legs
-                        for j in 0..i {
-                            T::Asset::unsafe_system_transfer(
-                                SettlementDID.as_id(),
-                                &legs[j].asset,
-                                legs[j].to,
-                                legs[j].from,
-                                legs[j].amount,
-                            );
+
+                        for j in 0..legs.len() {
+                            match Self::instruction_leg_status(instruction_id, legs[j].leg_number) {
+                                LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
+                                    <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
+                                    Self::deposit_event(RawEvent::ReceiptUnclaimed(
+                                        SettlementDID.as_id(),
+                                        instruction_id,
+                                        legs[j].leg_number,
+                                        receipt_uid,
+                                        signer,
+                                    ));
+                                }
+                                LegStatus::ExecutionPending => {
+                                    if j < i {
+                                        // Undo previous legs
+                                        T::Asset::unsafe_system_transfer(
+                                            SettlementDID.as_id(),
+                                            &legs[j].asset,
+                                            legs[j].to,
+                                            legs[j].from,
+                                            legs[j].amount,
+                                        );
+                                    } else {
+                                        // Remove custodian allowance
+                                        T::Asset::unsafe_decrease_custody_allowance(
+                                            SettlementDID.as_id(),
+                                            legs[j].asset,
+                                            legs[j].from,
+                                            SettlementDID.as_id(),
+                                            legs[j].amount,
+                                        );
+                                    }
+                                }
+                                _ => {}
+                            }
                         }
                         break;
                     }
