@@ -1395,13 +1395,28 @@ fn basic_fuzzing() {
         let block_number = System::block_number() + 1;
         let instruction_counter = Settlement::instruction_counter();
 
+        // initialize balances
+        for i in 0..10 {
+            for j in 0..4 {
+                balances.insert((tickers[i * 4 + j], dids[j], "init").encode(), 100_000);
+                balances.insert((tickers[i * 4 + j], dids[j], "final").encode(), 100_000);
+                for k in 0..4 {
+                    if j == k {
+                        continue;
+                    }
+                    balances.insert((tickers[i * 4 + j], dids[k], "init").encode(), 0);
+                    balances.insert((tickers[i * 4 + j], dids[k], "final").encode(), 0);
+                }
+            }
+        }
+
         let mut leg_details = Vec::with_capacity(100);
         let mut receipts = Vec::with_capacity(100);
         let mut receipt_legs = HashMap::with_capacity(100);
         for i in 0..10 {
             for j in 0..4 {
-                let mut final_i = 100;
-                balances.insert((tickers[i * 4 + j], dids[j], "init").encode(), 100);
+                let mut final_i = 100_000;
+                balances.insert((tickers[i * 4 + j], dids[j], "init").encode(), 100_000);
                 for k in 0..4 {
                     if j == k {
                         continue;
@@ -1417,7 +1432,7 @@ fn basic_fuzzing() {
                                 from: dids[j],
                                 to: dids[k],
                                 asset: tickers[i * 4 + j],
-                                amount: 1,
+                                amount: 1u128,
                             });
                             receipt_legs
                                 .insert(receipts.last().unwrap().encode(), leg_details.len());
@@ -1456,15 +1471,17 @@ fn basic_fuzzing() {
 
         // Authorize instructions and do a few authorize/unauthorize in between
         for signer in signers.clone() {
-            for _ in 0..5 {
-                assert_ok!(Settlement::authorize_instruction(
-                    signer.clone(),
-                    instruction_counter,
-                ));
-                assert_ok!(Settlement::unauthorize_instruction(
-                    signer.clone(),
-                    instruction_counter,
-                ));
+            for _ in 0..3 {
+                if random() {
+                    assert_ok!(Settlement::authorize_instruction(
+                        signer.clone(),
+                        instruction_counter,
+                    ));
+                    assert_ok!(Settlement::unauthorize_instruction(
+                        signer.clone(),
+                        instruction_counter,
+                    ));
+                }
             }
             assert_ok!(Settlement::authorize_instruction(
                 signer.clone(),
@@ -1472,24 +1489,26 @@ fn basic_fuzzing() {
             ));
         }
 
-        // Claim receipts and do a few authorize/unauthorize in between
+        // Claim receipts and do a few claim/unclaims in between
         for receipt in receipts {
             let leg_num = u64::try_from(*receipt_legs.get(&(receipt.encode())).unwrap()).unwrap();
             let signer = &signers[dids.iter().position(|&from| from == receipt.from).unwrap()];
-            for _ in 0..5 {
-                assert_ok!(Settlement::claim_receipt(
-                    signer.clone(),
-                    instruction_counter,
-                    leg_num,
-                    receipt.receipt_uid,
-                    AccountKeyring::Alice.public(),
-                    OffChainSignature::from(AccountKeyring::Alice.sign(&receipt.encode()))
-                ));
-                assert_ok!(Settlement::unclaim_receipt(
-                    signer.clone(),
-                    instruction_counter,
-                    leg_num
-                ));
+            for _ in 0..3 {
+                if random() {
+                    assert_ok!(Settlement::claim_receipt(
+                        signer.clone(),
+                        instruction_counter,
+                        leg_num,
+                        receipt.receipt_uid,
+                        AccountKeyring::Alice.public(),
+                        OffChainSignature::from(AccountKeyring::Alice.sign(&receipt.encode()))
+                    ));
+                    assert_ok!(Settlement::unclaim_receipt(
+                        signer.clone(),
+                        instruction_counter,
+                        leg_num
+                    ));
+                }
             }
             assert_ok!(Settlement::claim_receipt(
                 signer.clone(),
@@ -1499,6 +1518,27 @@ fn basic_fuzzing() {
                 AccountKeyring::Alice.public(),
                 OffChainSignature::from(AccountKeyring::Alice.sign(&receipt.encode()))
             ));
+        }
+
+        next_block();
+
+        for i in 0..40 {
+            for j in 0..4 {
+                assert_eq!(
+                    Asset::custodian_allowance((&tickers[i], dids[j], SettlementDID.as_id())),
+                    0
+                );
+                assert_eq!(Asset::total_custody_allowance((&tickers[i], dids[j])), 0);
+                assert_eq!(
+                    Asset::balance_of(&tickers[i], dids[j]),
+                    u128::try_from(
+                        *balances
+                            .get(&(tickers[i], dids[j], "final").encode())
+                            .unwrap()
+                    )
+                    .unwrap()
+                );
+            }
         }
     });
 }
