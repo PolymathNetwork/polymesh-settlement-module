@@ -63,7 +63,7 @@ pub trait Trait:
     type MaxScheduledInstructionLegsPerBlock: Get<u32>;
 }
 
-// TODO add more tests
+// TODO add more tests and comments
 /// Status of an instruction
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum InstructionStatus {

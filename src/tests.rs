@@ -16,8 +16,10 @@ use polymesh_primitives::Ticker;
 
 use codec::Encode;
 use frame_support::{assert_err, assert_ok};
+use rand::prelude::*;
 use sp_core::sr25519::Public;
 use sp_runtime::AnySignature;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use test_client::AccountKeyring;
 
@@ -35,6 +37,17 @@ type System = frame_system::Module<TestStorage>;
 type Error = settlement::Error<TestStorage>;
 
 fn init(token_name: &[u8], ticker: Ticker, keyring: Public) -> u64 {
+    create_token(token_name, ticker, keyring);
+    let venue_counter = Settlement::venue_counter();
+    assert_ok!(Settlement::create_venue(
+        Origin::signed(keyring),
+        vec![13],
+        vec![keyring]
+    ));
+    venue_counter
+}
+
+fn create_token(token_name: &[u8], ticker: Ticker, keyring: Public) {
     assert_ok!(Asset::create_asset(
         Origin::signed(keyring),
         token_name.into(),
@@ -52,13 +65,6 @@ fn init(token_name: &[u8], ticker: Ticker, keyring: Public) -> u64 {
         vec![],
         vec![]
     ));
-    let venue_counter = Settlement::venue_counter();
-    assert_ok!(Settlement::create_venue(
-        Origin::signed(keyring),
-        vec![13],
-        vec![keyring]
-    ));
-    venue_counter
 }
 
 fn next_block() {
@@ -1326,5 +1332,173 @@ fn venue_filtering() {
         next_block();
         // Second instruction fails to settle due to venue being not whitelisted
         assert_eq!(Asset::balance_of(&ticker, bob_did), 10);
+    });
+}
+
+#[test]
+fn basic_fuzzing() {
+    ExtBuilder::default().build().execute_with(|| {
+        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
+        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let (charlie_signed, charlie_did) = make_account(AccountKeyring::Charlie.public()).unwrap();
+        let (dave_signed, dave_did) = make_account(AccountKeyring::Dave.public()).unwrap();
+        let venue_counter = Settlement::venue_counter();
+        assert_ok!(Settlement::create_venue(
+            Origin::signed(AccountKeyring::Alice.public()),
+            vec![13],
+            vec![AccountKeyring::Alice.public()]
+        ));
+        let mut tickers = Vec::with_capacity(40);
+        let mut balances = HashMap::with_capacity(320);
+        let dids = vec![alice_did, bob_did, charlie_did, dave_did];
+        let signers = vec![
+            alice_signed.clone(),
+            bob_signed.clone(),
+            charlie_signed.clone(),
+            dave_signed.clone(),
+        ];
+
+        for i in 0..10 {
+            let mut token_name = [123u8 + u8::try_from(i * 4 + 0).unwrap()];
+            tickers.push(Ticker::try_from(&token_name[..]).unwrap());
+            create_token(
+                &token_name[..],
+                tickers[i * 4 + 0],
+                AccountKeyring::Alice.public(),
+            );
+
+            token_name = [123u8 + u8::try_from(i * 4 + 1).unwrap()];
+            tickers.push(Ticker::try_from(&token_name[..]).unwrap());
+            create_token(
+                &token_name[..],
+                tickers[i * 4 + 1],
+                AccountKeyring::Bob.public(),
+            );
+
+            token_name = [123u8 + u8::try_from(i * 4 + 2).unwrap()];
+            tickers.push(Ticker::try_from(&token_name[..]).unwrap());
+            create_token(
+                &token_name[..],
+                tickers[i * 4 + 2],
+                AccountKeyring::Charlie.public(),
+            );
+
+            token_name = [123u8 + u8::try_from(i * 4 + 3).unwrap()];
+            tickers.push(Ticker::try_from(&token_name[..]).unwrap());
+            create_token(
+                &token_name[..],
+                tickers[i * 4 + 3],
+                AccountKeyring::Dave.public(),
+            );
+        }
+
+        let block_number = System::block_number() + 1;
+        let instruction_counter = Settlement::instruction_counter();
+
+        let mut leg_details = Vec::with_capacity(100);
+        let mut receipts = Vec::with_capacity(100);
+        let mut receipt_legs = HashMap::with_capacity(100);
+        for i in 0..10 {
+            for j in 0..4 {
+                let mut final_i = 100;
+                balances.insert((tickers[i * 4 + j], dids[j], "init").encode(), 100);
+                for k in 0..4 {
+                    if j == k {
+                        continue;
+                    }
+                    balances.insert((tickers[i * 4 + j], dids[k], "init").encode(), 0);
+                    if random() {
+                        // This leg should happen
+                        if random() {
+                            // Receipt to be claimed
+                            balances.insert((tickers[i * 4 + j], dids[k], "final").encode(), 0);
+                            receipts.push(Receipt {
+                                receipt_uid: u64::try_from(k * 1000 + i * 4 + j).unwrap(),
+                                from: dids[j],
+                                to: dids[k],
+                                asset: tickers[i * 4 + j],
+                                amount: 1,
+                            });
+                            receipt_legs
+                                .insert(receipts.last().unwrap().encode(), leg_details.len());
+                        } else {
+                            balances.insert((tickers[i * 4 + j], dids[k], "final").encode(), 1);
+                            final_i -= 1;
+                        }
+                        leg_details.push(LegDetails {
+                            from: dids[j],
+                            to: dids[k],
+                            asset: tickers[i * 4 + j],
+                            amount: 1,
+                        });
+                        if leg_details.len() >= 100 {
+                            break;
+                        }
+                    }
+                }
+                balances.insert((tickers[i * 4 + j], dids[j], "final").encode(), final_i);
+                if leg_details.len() >= 100 {
+                    break;
+                }
+            }
+            if leg_details.len() >= 100 {
+                break;
+            }
+        }
+
+        assert_ok!(Settlement::add_instruction(
+            alice_signed.clone(),
+            venue_counter,
+            SettlementType::SettleOnBlock(block_number),
+            None,
+            leg_details
+        ));
+
+        // Authorize instructions and do a few authorize/unauthorize in between
+        for signer in signers.clone() {
+            for _ in 0..5 {
+                assert_ok!(Settlement::authorize_instruction(
+                    signer.clone(),
+                    instruction_counter,
+                ));
+                assert_ok!(Settlement::unauthorize_instruction(
+                    signer.clone(),
+                    instruction_counter,
+                ));
+            }
+            assert_ok!(Settlement::authorize_instruction(
+                signer.clone(),
+                instruction_counter,
+            ));
+        }
+
+        // Claim receipts and do a few authorize/unauthorize in between
+        for receipt in receipts {
+            let leg_num = u64::try_from(*receipt_legs.get(&(receipt.encode())).unwrap()).unwrap();
+            let signer = &signers[dids.iter().position(|&from| from == receipt.from).unwrap()];
+            for _ in 0..5 {
+                assert_ok!(Settlement::claim_receipt(
+                    signer.clone(),
+                    instruction_counter,
+                    leg_num,
+                    receipt.receipt_uid,
+                    AccountKeyring::Alice.public(),
+                    OffChainSignature::from(AccountKeyring::Alice.sign(&receipt.encode()))
+                ));
+                assert_ok!(Settlement::unclaim_receipt(
+                    signer.clone(),
+                    instruction_counter,
+                    leg_num
+                ));
+            }
+            assert_ok!(Settlement::claim_receipt(
+                signer.clone(),
+                instruction_counter,
+                leg_num,
+                receipt.receipt_uid,
+                AccountKeyring::Alice.public(),
+                OffChainSignature::from(AccountKeyring::Alice.sign(&receipt.encode()))
+            ));
+        }
     });
 }
