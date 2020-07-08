@@ -223,6 +223,19 @@ pub struct Receipt<Balance> {
     pub amount: Balance,
 }
 
+/// Details about an offchain transaction receipt that a user must input
+#[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
+pub struct ReceiptDetails<AccountId, OffChainSignature> {
+    /// Unique receipt number set by the signer for their receipts
+    pub receipt_uid: u64,
+    /// Target leg number
+    pub leg_number: u64,
+    /// Signer for this receipt
+    pub signer: AccountId,
+    /// signature confirming the receipt details
+    pub signature: OffChainSignature,
+}
+
 decl_event!(
     pub enum Event<T>
     where
@@ -547,7 +560,7 @@ decl_module! {
         /// * `signer` - Signer of the receipt.
         /// * `signed_data` - Signed receipt.
         #[weight = SimpleDispatchInfo::FixedNormal(1_000_000)]
-        pub fn authorize_with_receipt(origin, instruction_id: u64, leg_number: u64, receipt_uid: u64, signer: T::AccountId, signature: T::OffChainSignature) -> DispatchResult {
+        pub fn authorize_with_receipts(origin, instruction_id: u64, receipt_details: Vec<ReceiptDetails<T::AccountId, T::OffChainSignature>>) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
             Self::ensure_instruction_validity(instruction_id)?;
@@ -560,39 +573,50 @@ decl_module! {
             );
 
             let instruction_details = Self::instruction_details(instruction_id);
-            ensure!(
-                Self::venue_signers(instruction_details.venue_id, &signer), Error::<T>::UnauthorizedSigner
-            );
+
+            let mut receipt_ids = receipt_details.iter().map(|receipt| (receipt.signer.clone(), receipt.receipt_uid)).collect::<Vec<_>>();
+            receipt_ids.sort();
+            receipt_ids.dedup();
 
             ensure!(
-                !Self::receipts_used(&signer, receipt_uid), Error::<T>::ReceiptAlreadyClaimed
+                receipt_ids.len() == receipt_details.len(),
+                Error::<T>::ReceiptAlreadyClaimed
             );
 
-            let leg = Self::instruction_legs(instruction_id, leg_number);
-            ensure!(leg.from == did, Error::<T>::Unauthorized);
+            for receipt in &receipt_details {
+                ensure!(
+                    Self::venue_signers(&instruction_details.venue_id, &receipt.signer), Error::<T>::UnauthorizedSigner
+                );
+                ensure!(
+                    !Self::receipts_used(&receipt.signer, &receipt.receipt_uid), Error::<T>::ReceiptAlreadyClaimed
+                );
 
-            let msg = Receipt {
-                receipt_uid: receipt_uid,
-                from: leg.from,
-                to: leg.to,
-                asset: leg.asset,
-                amount: leg.amount
-            };
+                let leg = Self::instruction_legs(&instruction_id, &receipt.leg_number);
+                ensure!(leg.from == did, Error::<T>::Unauthorized);
 
-            ensure!(
-                signature.verify(&msg.encode()[..], &signer),
-                Error::<T>::InvalidSignature
-            );
+                let msg = Receipt {
+                    receipt_uid: receipt.receipt_uid,
+                    from: leg.from,
+                    to: leg.to,
+                    asset: leg.asset,
+                    amount: leg.amount
+                };
+
+                ensure!(
+                    receipt.signature.verify(&msg.encode()[..], &receipt.signer),
+                    Error::<T>::InvalidSignature
+                );
+            }
 
             // lock tokens
             let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
             for i in 0..legs.len() {
                 if legs[i].from == did {
-                    if legs[i].leg_number == leg_number {
+                    if let Some(receipt) = receipt_details.iter().find(|receipt| receipt.leg_number == legs[i].leg_number) {
                         <InstructionLegStatus<T>>::insert(
                             instruction_id,
-                            leg_number,
-                            LegStatus::ExecutionToBeSkipped(signer.clone(), receipt_uid)
+                            legs[i].leg_number,
+                            LegStatus::ExecutionToBeSkipped(receipt.signer.clone(), receipt.receipt_uid)
                         );
                     } else if T::Asset::unsafe_increase_custody_allowance(
                         did,
@@ -603,7 +627,7 @@ decl_module! {
                     ).is_err() {
                         // Undo previous locks
                         for j in 0..i {
-                            if legs[i].leg_number != leg_number {
+                            if !receipt_details.iter().any(|receipt| receipt.leg_number == legs[i].leg_number) {
                                 T::Asset::unsafe_decrease_custody_allowance(did,
                                     legs[j].asset,
                                     did,
@@ -633,10 +657,13 @@ decl_module! {
             <UserAuths>::insert(did, instruction_id, AuthorizationStatus::Authorized);
             <AuthsReceived>::insert(instruction_id, did, AuthorizationStatus::Authorized);
             <InstructionAuthsPending>::insert(instruction_id, auths_pending);
-            <ReceiptsUsed<T>>::insert(&signer, receipt_uid, true);
+            for receipt in &receipt_details {
+                <ReceiptsUsed<T>>::insert(&receipt.signer, receipt.receipt_uid, true);
+                Self::deposit_event(RawEvent::ReceiptClaimed(did, instruction_id, receipt.leg_number, receipt.receipt_uid, receipt.signer.clone()));
+            }
 
             Self::deposit_event(RawEvent::InstructionAuthorized(did, instruction_id));
-            Self::deposit_event(RawEvent::ReceiptClaimed(did, instruction_id, leg_number, receipt_uid, signer));
+
 
             if auths_pending == 0 && instruction_details.settlement_type == SettlementType::SettleOnAuthorization {
                 Self::execute_instruction(instruction_id);
@@ -654,11 +681,18 @@ decl_module! {
         /// * `signer` - Signer of the receipt.
         /// * `signed_data` - Signed receipt.
         #[weight = SimpleDispatchInfo::FixedNormal(1_000_000)]
-        pub fn claim_receipt(origin, instruction_id: u64, leg_number: u64, receipt_uid: u64, signer: T::AccountId, signature: T::OffChainSignature) -> DispatchResult {
+        pub fn claim_receipt(origin, instruction_id: u64, receipt_details: ReceiptDetails<T::AccountId, T::OffChainSignature>) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
 
-            Self::unsafe_claim_receipt(did, instruction_id, leg_number, receipt_uid, signer, signature)
+            Self::unsafe_claim_receipt(
+                did,
+                instruction_id,
+                receipt_details.leg_number,
+                receipt_details.receipt_uid,
+                receipt_details.signer,
+                receipt_details.signature
+            )
         }
 
         /// Unclaims a previously claimed receipt.

@@ -9,7 +9,7 @@ use pallet_compliance_manager as compliance_manager;
 use pallet_identity as identity;
 use pallet_settlement::{
     self as settlement, AuthorizationStatus, Instruction, InstructionStatus, Leg, LegDetails,
-    LegStatus, Receipt, SettlementType,
+    LegStatus, Receipt, ReceiptDetails, SettlementType,
 };
 use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
 use polymesh_primitives::Ticker;
@@ -536,10 +536,12 @@ fn claiming_receipt() {
             Settlement::claim_receipt(
                 alice_signed.clone(),
                 instruction_counter,
-                0,
-                0,
-                AccountKeyring::Alice.public(),
-                OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
+                ReceiptDetails {
+                    receipt_uid: 0,
+                    leg_number: 0,
+                    signer: AccountKeyring::Alice.public(),
+                    signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
+                }
             ),
             Error::LegNotPending
         );
@@ -604,10 +606,12 @@ fn claiming_receipt() {
             Settlement::claim_receipt(
                 alice_signed.clone(),
                 instruction_counter,
-                0,
-                0,
-                AccountKeyring::Alice.public(),
-                OffChainSignature::from(AccountKeyring::Alice.sign(&msg2.encode()))
+                ReceiptDetails {
+                    receipt_uid: 0,
+                    leg_number: 0,
+                    signer: AccountKeyring::Alice.public(),
+                    signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg2.encode()))
+                }
             ),
             Error::InvalidSignature
         );
@@ -616,10 +620,12 @@ fn claiming_receipt() {
         assert_ok!(Settlement::claim_receipt(
             alice_signed.clone(),
             instruction_counter,
-            0,
-            0,
-            AccountKeyring::Alice.public(),
-            OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
+            ReceiptDetails {
+                receipt_uid: 0,
+                leg_number: 0,
+                signer: AccountKeyring::Alice.public(),
+                signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
+            }
         ));
 
         assert_eq!(
@@ -713,10 +719,12 @@ fn claiming_receipt() {
         assert_ok!(Settlement::claim_receipt(
             alice_signed.clone(),
             instruction_counter,
-            0,
-            0,
-            AccountKeyring::Alice.public(),
-            OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
+            ReceiptDetails {
+                receipt_uid: 0,
+                leg_number: 0,
+                signer: AccountKeyring::Alice.public(),
+                signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
+            }
         ));
 
         assert_eq!(
@@ -1498,10 +1506,14 @@ fn basic_fuzzing() {
                     assert_ok!(Settlement::claim_receipt(
                         signer.clone(),
                         instruction_counter,
-                        leg_num,
-                        receipt.receipt_uid,
-                        AccountKeyring::Alice.public(),
-                        OffChainSignature::from(AccountKeyring::Alice.sign(&receipt.encode()))
+                        ReceiptDetails {
+                            receipt_uid: receipt.receipt_uid,
+                            leg_number: leg_num,
+                            signer: AccountKeyring::Alice.public(),
+                            signature: OffChainSignature::from(
+                                AccountKeyring::Alice.sign(&receipt.encode())
+                            )
+                        }
                     ));
                     assert_ok!(Settlement::unclaim_receipt(
                         signer.clone(),
@@ -1513,10 +1525,14 @@ fn basic_fuzzing() {
             assert_ok!(Settlement::claim_receipt(
                 signer.clone(),
                 instruction_counter,
-                leg_num,
-                receipt.receipt_uid,
-                AccountKeyring::Alice.public(),
-                OffChainSignature::from(AccountKeyring::Alice.sign(&receipt.encode()))
+                ReceiptDetails {
+                    receipt_uid: receipt.receipt_uid,
+                    leg_number: leg_num,
+                    signer: AccountKeyring::Alice.public(),
+                    signature: OffChainSignature::from(
+                        AccountKeyring::Alice.sign(&receipt.encode())
+                    )
+                }
             ));
         }
 
@@ -1540,5 +1556,191 @@ fn basic_fuzzing() {
                 );
             }
         }
+    });
+}
+
+#[test]
+fn claim_multiple_receipts_during_authorization() {
+    ExtBuilder::default().build().execute_with(|| {
+        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
+        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let token_name = b"ACME";
+        let ticker = Ticker::try_from(&token_name[..]).unwrap();
+        let token_name2 = b"ACME2";
+        let ticker2 = Ticker::try_from(&token_name2[..]).unwrap();
+        let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
+        init(token_name2, ticker2, AccountKeyring::Bob.public());
+
+        let instruction_counter = Settlement::instruction_counter();
+        let alice_init_balance = Asset::balance_of(&ticker, alice_did);
+        let bob_init_balance = Asset::balance_of(&ticker, bob_did);
+        let alice_init_balance2 = Asset::balance_of(&ticker2, alice_did);
+        let bob_init_balance2 = Asset::balance_of(&ticker2, bob_did);
+
+        let amount = 100u128;
+        let leg_details = vec![
+            LegDetails {
+                from: alice_did,
+                to: bob_did,
+                asset: ticker,
+                amount: amount,
+            },
+            LegDetails {
+                from: alice_did,
+                to: bob_did,
+                asset: ticker2,
+                amount: amount,
+            },
+        ];
+        let mut legs = Vec::with_capacity(leg_details.len());
+        for i in 0..leg_details.len() {
+            legs.push(Leg::new(
+                u64::try_from(i).unwrap_or_default(),
+                leg_details[i].clone(),
+            ));
+        }
+
+        assert_ok!(Settlement::add_instruction(
+            alice_signed.clone(),
+            venue_counter,
+            SettlementType::SettleOnAuthorization,
+            None,
+            leg_details.clone()
+        ));
+
+        assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
+        assert_eq!(Asset::balance_of(&ticker2, alice_did), alice_init_balance2);
+        assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
+
+        let msg1 = Receipt {
+            receipt_uid: 0,
+            from: alice_did,
+            to: bob_did,
+            asset: ticker,
+            amount: amount,
+        };
+        let msg2 = Receipt {
+            receipt_uid: 0,
+            from: alice_did,
+            to: bob_did,
+            asset: ticker2,
+            amount: amount,
+        };
+        let msg3 = Receipt {
+            receipt_uid: 1,
+            from: alice_did,
+            to: bob_did,
+            asset: ticker2,
+            amount: amount,
+        };
+
+        assert_err!(
+            Settlement::authorize_with_receipts(
+                alice_signed.clone(),
+                instruction_counter,
+                vec![
+                    ReceiptDetails {
+                        receipt_uid: 0,
+                        leg_number: 0,
+                        signer: AccountKeyring::Alice.public(),
+                        signature: OffChainSignature::from(
+                            AccountKeyring::Alice.sign(&msg1.encode())
+                        )
+                    },
+                    ReceiptDetails {
+                        receipt_uid: 0,
+                        leg_number: 0,
+                        signer: AccountKeyring::Alice.public(),
+                        signature: OffChainSignature::from(
+                            AccountKeyring::Alice.sign(&msg2.encode())
+                        )
+                    },
+                ]
+            ),
+            Error::ReceiptAlreadyClaimed
+        );
+
+        assert_ok!(Settlement::authorize_with_receipts(
+            alice_signed.clone(),
+            instruction_counter,
+            vec![
+                ReceiptDetails {
+                    receipt_uid: 0,
+                    leg_number: 0,
+                    signer: AccountKeyring::Alice.public(),
+                    signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg1.encode()))
+                },
+                ReceiptDetails {
+                    receipt_uid: 1,
+                    leg_number: 1,
+                    signer: AccountKeyring::Alice.public(),
+                    signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg3.encode()))
+                },
+            ]
+        ));
+
+        assert_eq!(
+            Settlement::instruction_auths_pending(instruction_counter),
+            1
+        );
+        assert_eq!(
+            Settlement::user_auths(alice_did, instruction_counter),
+            AuthorizationStatus::Authorized
+        );
+        assert_eq!(
+            Settlement::user_auths(bob_did, instruction_counter),
+            AuthorizationStatus::Pending
+        );
+        assert_eq!(
+            Settlement::auths_received(instruction_counter, alice_did),
+            AuthorizationStatus::Authorized
+        );
+        assert_eq!(
+            Settlement::auths_received(instruction_counter, bob_did),
+            AuthorizationStatus::Unknown
+        );
+        assert_eq!(
+            Settlement::instruction_leg_status(instruction_counter, 0),
+            LegStatus::ExecutionToBeSkipped(AccountKeyring::Alice.public(), 0)
+        );
+        assert_eq!(
+            Settlement::instruction_leg_status(instruction_counter, 1),
+            LegStatus::ExecutionToBeSkipped(AccountKeyring::Alice.public(), 1)
+        );
+        assert_eq!(
+            Asset::custodian_allowance((&ticker, alice_did, SettlementDID.as_id())),
+            0
+        );
+        assert_eq!(Asset::total_custody_allowance((&ticker, alice_did)), 0);
+
+        assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
+        assert_eq!(Asset::balance_of(&ticker2, alice_did), alice_init_balance2);
+        assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
+
+        assert_ok!(Settlement::authorize_instruction(
+            bob_signed.clone(),
+            instruction_counter,
+        ));
+
+        // Instruction should've settled
+        assert_eq!(
+            Settlement::user_auths(alice_did, instruction_counter),
+            AuthorizationStatus::Authorized
+        );
+        assert_eq!(
+            Settlement::user_auths(bob_did, instruction_counter),
+            AuthorizationStatus::Authorized
+        );
+        assert_eq!(
+            Asset::custodian_allowance((&ticker, alice_did, SettlementDID.as_id())),
+            0
+        );
+        assert_eq!(Asset::total_custody_allowance((&ticker, alice_did)), 0);
+        assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
+        assert_eq!(Asset::balance_of(&ticker2, alice_did), alice_init_balance2);
+        assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
     });
 }
