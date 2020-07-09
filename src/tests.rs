@@ -1744,3 +1744,28 @@ fn claim_multiple_receipts_during_authorization() {
         assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
     });
 }
+
+#[test]
+fn encode_receipt() {
+    ExtBuilder::default().build().execute_with(|| {
+        let token_name = [0x01u8];
+        let ticker = Ticker::try_from(&token_name[..]).unwrap();
+        let msg1 = Receipt {
+            receipt_uid: 0,
+            from: IdentityId::try_from("did:poly:0600000000000000000000000000000000000000000000000000000000000000").unwrap(),
+            to: IdentityId::try_from("did:poly:0600000000000000000000000000000000000000000000000000000000000000").unwrap(),
+            asset: ticker,
+            amount: 100u128,
+        };
+        println!(
+            "{:?}",
+            &msg1.encode()
+        );
+        println!(
+            "{:?}",
+            OffChainSignature::from(
+                AccountKeyring::Alice.sign(&msg1.encode())
+            )
+        );
+    });
+}
