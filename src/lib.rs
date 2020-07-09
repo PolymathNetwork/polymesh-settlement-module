@@ -39,12 +39,8 @@ use polymesh_primitives::{IdentityId, Ticker};
 
 use codec::{Decode, Encode};
 use frame_support::{
-    decl_error, decl_event, decl_module, decl_storage,
-    dispatch::DispatchResult,
-    ensure,
-    traits::Get,
-    weights::Weight,
-    IterableStorageDoubleMap,
+    decl_error, decl_event, decl_module, decl_storage, dispatch::DispatchResult, ensure,
+    traits::Get, weights::Weight, IterableStorageDoubleMap,
 };
 use frame_system::{self as system, ensure_signed};
 use sp_runtime::traits::{AccountIdConversion, Verify};

@@ -8,8 +8,8 @@ use pallet_balances as balances;
 use pallet_compliance_manager as compliance_manager;
 use pallet_identity as identity;
 use pallet_settlement::{
-    self as settlement, AuthorizationStatus, Instruction, InstructionStatus, Leg,
-    LegStatus, Receipt, ReceiptDetails, SettlementType,
+    self as settlement, AuthorizationStatus, Instruction, InstructionStatus, Leg, LegStatus,
+    Receipt, ReceiptDetails, SettlementType,
 };
 use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
 use polymesh_primitives::{IdentityId, Ticker};
@@ -1414,8 +1414,7 @@ fn basic_fuzzing() {
                                 asset: tickers[i * 4 + j],
                                 amount: 1u128,
                             });
-                            receipt_legs
-                                .insert(receipts.last().unwrap().encode(), legs.len());
+                            receipt_legs.insert(receipts.last().unwrap().encode(), legs.len());
                         } else {
                             balances.insert((tickers[i * 4 + j], dids[k], "final").encode(), 1);
                             final_i -= 1;
