@@ -8,7 +8,7 @@ use pallet_balances as balances;
 use pallet_compliance_manager as compliance_manager;
 use pallet_identity as identity;
 use pallet_settlement::{
-    self as settlement, AuthorizationStatus, Instruction, InstructionStatus, Leg, LegDetails,
+    self as settlement, AuthorizationStatus, Instruction, InstructionStatus, Leg,
     LegStatus, Receipt, ReceiptDetails, SettlementType,
 };
 use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
@@ -120,7 +120,7 @@ fn basic_settlement() {
             venue_counter,
             SettlementType::SettleOnAuthorization,
             None,
-            vec![LegDetails {
+            vec![Leg {
                 from: alice_did,
                 to: bob_did,
                 asset: ticker,
@@ -179,34 +179,27 @@ fn token_swap() {
         let bob_init_balance2 = Asset::balance_of(&ticker2, bob_did);
 
         let amount = 100u128;
-        let leg_details = vec![
-            LegDetails {
+        let legs = vec![
+            Leg {
                 from: alice_did,
                 to: bob_did,
                 asset: ticker,
                 amount: amount,
             },
-            LegDetails {
+            Leg {
                 from: bob_did,
                 to: alice_did,
                 asset: ticker2,
                 amount: amount,
             },
         ];
-        let mut legs = Vec::with_capacity(leg_details.len());
-        for i in 0..leg_details.len() {
-            legs.push(Leg::new(
-                u64::try_from(i).unwrap_or_default(),
-                leg_details[i].clone(),
-            ));
-        }
 
         assert_ok!(Settlement::add_instruction(
             alice_signed.clone(),
             venue_counter,
             SettlementType::SettleOnAuthorization,
             None,
-            leg_details.clone()
+            legs.clone()
         ));
 
         assert_eq!(
@@ -449,34 +442,27 @@ fn claiming_receipt() {
         let bob_init_balance2 = Asset::balance_of(&ticker2, bob_did);
 
         let amount = 100u128;
-        let leg_details = vec![
-            LegDetails {
+        let legs = vec![
+            Leg {
                 from: alice_did,
                 to: bob_did,
                 asset: ticker,
                 amount: amount,
             },
-            LegDetails {
+            Leg {
                 from: bob_did,
                 to: alice_did,
                 asset: ticker2,
                 amount: amount,
             },
         ];
-        let mut legs = Vec::with_capacity(leg_details.len());
-        for i in 0..leg_details.len() {
-            legs.push(Leg::new(
-                u64::try_from(i).unwrap_or_default(),
-                leg_details[i].clone(),
-            ));
-        }
 
         assert_ok!(Settlement::add_instruction(
             alice_signed.clone(),
             venue_counter,
             SettlementType::SettleOnAuthorization,
             None,
-            leg_details.clone()
+            legs.clone()
         ));
 
         assert_eq!(
@@ -825,34 +811,27 @@ fn settle_on_block() {
         let bob_init_balance2 = Asset::balance_of(&ticker2, bob_did);
 
         let amount = 100u128;
-        let leg_details = vec![
-            LegDetails {
+        let legs = vec![
+            Leg {
                 from: alice_did,
                 to: bob_did,
                 asset: ticker,
                 amount: amount,
             },
-            LegDetails {
+            Leg {
                 from: bob_did,
                 to: alice_did,
                 asset: ticker2,
                 amount: amount,
             },
         ];
-        let mut legs = Vec::with_capacity(leg_details.len());
-        for i in 0..leg_details.len() {
-            legs.push(Leg::new(
-                u64::try_from(i).unwrap_or_default(),
-                leg_details[i].clone(),
-            ));
-        }
 
         assert_ok!(Settlement::add_instruction(
             alice_signed.clone(),
             venue_counter,
             SettlementType::SettleOnBlock(block_number),
             None,
-            leg_details.clone()
+            legs.clone()
         ));
 
         assert_eq!(
@@ -1063,34 +1042,27 @@ fn failed_execution() {
         let bob_init_balance2 = Asset::balance_of(&ticker2, bob_did);
 
         let amount = 100u128;
-        let leg_details = vec![
-            LegDetails {
+        let legs = vec![
+            Leg {
                 from: alice_did,
                 to: bob_did,
                 asset: ticker,
                 amount: amount,
             },
-            LegDetails {
+            Leg {
                 from: bob_did,
                 to: alice_did,
                 asset: ticker2,
                 amount: amount,
             },
         ];
-        let mut legs = Vec::with_capacity(leg_details.len());
-        for i in 0..leg_details.len() {
-            legs.push(Leg::new(
-                u64::try_from(i).unwrap_or_default(),
-                leg_details[i].clone(),
-            ));
-        }
 
         assert_ok!(Settlement::add_instruction(
             alice_signed.clone(),
             venue_counter,
             SettlementType::SettleOnBlock(block_number),
             None,
-            leg_details.clone()
+            legs.clone()
         ));
 
         assert_eq!(
@@ -1274,7 +1246,7 @@ fn venue_filtering() {
         let block_number = System::block_number() + 1;
         let instruction_counter = Settlement::instruction_counter();
 
-        let leg_details = vec![LegDetails {
+        let legs = vec![Leg {
             from: alice_did,
             to: bob_did,
             asset: ticker,
@@ -1285,7 +1257,7 @@ fn venue_filtering() {
             venue_counter,
             SettlementType::SettleOnBlock(block_number),
             None,
-            leg_details.clone()
+            legs.clone()
         ));
         assert_ok!(Settlement::set_venue_filtering(
             alice_signed.clone(),
@@ -1298,7 +1270,7 @@ fn venue_filtering() {
                 venue_counter,
                 SettlementType::SettleOnBlock(block_number),
                 None,
-                leg_details.clone()
+                legs.clone()
             ),
             Error::UnauthorizedVenue
         );
@@ -1312,7 +1284,7 @@ fn venue_filtering() {
             venue_counter,
             SettlementType::SettleOnBlock(block_number + 1),
             None,
-            leg_details.clone()
+            legs.clone()
         ));
         assert_ok!(Settlement::authorize_instruction(
             alice_signed.clone(),
@@ -1418,7 +1390,7 @@ fn basic_fuzzing() {
             }
         }
 
-        let mut leg_details = Vec::with_capacity(100);
+        let mut legs = Vec::with_capacity(100);
         let mut receipts = Vec::with_capacity(100);
         let mut receipt_legs = HashMap::with_capacity(100);
         for i in 0..10 {
@@ -1443,28 +1415,28 @@ fn basic_fuzzing() {
                                 amount: 1u128,
                             });
                             receipt_legs
-                                .insert(receipts.last().unwrap().encode(), leg_details.len());
+                                .insert(receipts.last().unwrap().encode(), legs.len());
                         } else {
                             balances.insert((tickers[i * 4 + j], dids[k], "final").encode(), 1);
                             final_i -= 1;
                         }
-                        leg_details.push(LegDetails {
+                        legs.push(Leg {
                             from: dids[j],
                             to: dids[k],
                             asset: tickers[i * 4 + j],
                             amount: 1,
                         });
-                        if leg_details.len() >= 100 {
+                        if legs.len() >= 100 {
                             break;
                         }
                     }
                 }
                 balances.insert((tickers[i * 4 + j], dids[j], "final").encode(), final_i);
-                if leg_details.len() >= 100 {
+                if legs.len() >= 100 {
                     break;
                 }
             }
-            if leg_details.len() >= 100 {
+            if legs.len() >= 100 {
                 break;
             }
         }
@@ -1474,7 +1446,7 @@ fn basic_fuzzing() {
             venue_counter,
             SettlementType::SettleOnBlock(block_number),
             None,
-            leg_details
+            legs
         ));
 
         // Authorize instructions and do a few authorize/unauthorize in between
@@ -1578,34 +1550,27 @@ fn claim_multiple_receipts_during_authorization() {
         let bob_init_balance2 = Asset::balance_of(&ticker2, bob_did);
 
         let amount = 100u128;
-        let leg_details = vec![
-            LegDetails {
+        let legs = vec![
+            Leg {
                 from: alice_did,
                 to: bob_did,
                 asset: ticker,
                 amount: amount,
             },
-            LegDetails {
+            Leg {
                 from: alice_did,
                 to: bob_did,
                 asset: ticker2,
                 amount: amount,
             },
         ];
-        let mut legs = Vec::with_capacity(leg_details.len());
-        for i in 0..leg_details.len() {
-            legs.push(Leg::new(
-                u64::try_from(i).unwrap_or_default(),
-                leg_details[i].clone(),
-            ));
-        }
 
         assert_ok!(Settlement::add_instruction(
             alice_signed.clone(),
             venue_counter,
             SettlementType::SettleOnAuthorization,
             None,
-            leg_details.clone()
+            legs.clone()
         ));
 
         assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
