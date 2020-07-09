@@ -43,7 +43,7 @@ use frame_support::{
     dispatch::DispatchResult,
     ensure,
     traits::Get,
-    weights::{DispatchClass, FunctionOf, Weight},
+    weights::Weight,
     IterableStorageDoubleMap,
 };
 use frame_system::{self as system, ensure_signed};
@@ -147,24 +147,9 @@ pub struct Instruction<Moment, BlockNumber> {
     pub valid_from: Option<Moment>,
 }
 
-/// Details of a leg that the user needs to submit while creating an instruction
-#[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
-pub struct LegDetails<Balance> {
-    /// Identity of the sender
-    pub from: IdentityId,
-    /// Identity of the receiver
-    pub to: IdentityId,
-    /// Ticker of the asset being transferred
-    pub asset: Ticker,
-    /// Amount being transferred
-    pub amount: Balance,
-}
-
 /// Details of a leg including the leg number in the instruction
 #[derive(Encode, Decode, Default, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub struct Leg<Balance> {
-    /// leg number in the instruction
-    pub leg_number: u64,
     /// Identity of the sender
     pub from: IdentityId,
     /// Identity of the receiver
@@ -173,18 +158,6 @@ pub struct Leg<Balance> {
     pub asset: Ticker,
     /// Amount being transferred
     pub amount: Balance,
-}
-
-impl<Balance> Leg<Balance> {
-    pub fn new(leg_number: u64, leg: LegDetails<Balance>) -> Self {
-        Leg {
-            leg_number,
-            from: leg.from,
-            to: leg.to,
-            asset: leg.asset,
-            amount: leg.amount,
-        }
-    }
 }
 
 /// Details about a venue
@@ -392,17 +365,17 @@ decl_module! {
         /// * `settlement_type` - Defines if the instruction should be settled
         ///    immediately after receiving all auths or waiting till a specific block.
         /// * `valid_from` - Optional date from which people can interact with this instruction.
-        /// * `leg_details` - Legs included in this instruction.
+        /// * `legs` - Legs included in this instruction.
         ///
         /// # Weight
         /// `200_000 + 100_000 * legs.len()`
-        #[weight = 200_000 + 100_000 * u64::try_from(leg_details.len()).unwrap_or_default()]
+        #[weight = 200_000 + 100_000 * u64::try_from(legs.len()).unwrap_or_default()]
         pub fn add_instruction(
             origin,
             venue_id: u64,
             settlement_type: SettlementType<T::BlockNumber>,
             valid_from: Option<T::Moment>,
-            leg_details: Vec<LegDetails<T::Balance>>
+            legs: Vec<Leg<T::Balance>>
         ) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
@@ -414,14 +387,12 @@ decl_module! {
 
             // Prepare data to store in storage
             let instruction_counter = Self::instruction_counter();
-            let mut legs = Vec::with_capacity(leg_details.len());
-            let mut counter_parties = Vec::with_capacity(leg_details.len() * 2);
-            let mut tickers = Vec::with_capacity(leg_details.len());
-            for i in 0..leg_details.len() {
-                counter_parties.push(leg_details[i].from);
-                counter_parties.push(leg_details[i].to);
-                tickers.push(leg_details[i].asset);
-                legs.push(Leg::new(u64::try_from(i).unwrap_or_default(), leg_details[i].clone()));
+            let mut counter_parties = Vec::with_capacity(legs.len() * 2);
+            let mut tickers = Vec::with_capacity(legs.len());
+            for i in 0..legs.len() {
+                counter_parties.push(legs[i].from);
+                counter_parties.push(legs[i].to);
+                tickers.push(legs[i].asset);
             }
 
             // Check if venue has required permissions from token owners
