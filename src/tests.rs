@@ -12,7 +12,7 @@ use pallet_settlement::{
     LegStatus, Receipt, ReceiptDetails, SettlementType,
 };
 use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
-use polymesh_primitives::Ticker;
+use polymesh_primitives::{IdentityId, Ticker};
 
 use codec::Encode;
 use frame_support::{assert_err, assert_ok};
@@ -1752,20 +1752,18 @@ fn encode_receipt() {
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let msg1 = Receipt {
             receipt_uid: 0,
-            from: IdentityId::try_from("did:poly:0600000000000000000000000000000000000000000000000000000000000000").unwrap(),
-            to: IdentityId::try_from("did:poly:0600000000000000000000000000000000000000000000000000000000000000").unwrap(),
+            from: IdentityId::try_from(
+                "did:poly:0600000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
+            to: IdentityId::try_from(
+                "did:poly:0600000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
             asset: ticker,
             amount: 100u128,
         };
-        println!(
-            "{:?}",
-            &msg1.encode()
-        );
-        println!(
-            "{:?}",
-            OffChainSignature::from(
-                AccountKeyring::Alice.sign(&msg1.encode())
-            )
-        );
+        println!("{:?}", &msg1.encode());
+        println!("{:?}", AccountKeyring::Alice.sign(&msg1.encode()));
     });
 }
