@@ -1,17 +1,4 @@
-// This file is part of the Polymesh distribution (https://github.com/PolymathNetwork/Polymesh).
 // Copyright (c) 2020 Polymath
-
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, version 3.
-
-// This program is distributed in the hope that it will be useful, but
-// WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-// General Public License for more details.
-
-// You should have received a copy of the GNU General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 //! # Settlement Module
 //!
@@ -19,11 +6,30 @@
 //!
 //! ## Overview
 //!
-//! TODO
+//! The settlement module provides functionality to settle onchain as well as offchain trades between multiple parties.
+//! All trades are settled under venues. A token issuer can allow/block certain venues from settling trades that involve their tokens.
+//! An atomic settlement is called an Instruction. An instruction can contain multiple legs. Legs are essentially simple one to one transfers.
+//! When an instruction is settled, either all legs are executed successfully or none are. In other words, if one of the leg fails due to
+//! compliance failure, all other legs will also fail.
+//!
+//! An instruction must be authorized by all the counter parties involved for it to be executed.
+//! An instruction can be set to automatically execute when all authorizations are received or at a particular block number.
+//!
+//! Offchain settlements are represented via receipts. If a leg has a receipt attached to it, it will not be executed onchain.
+//! All other legs will be executed onchain during settlement.
 //!
 //! ## Dispatchable Functions
 //!
-//! TODO
+//! - `create_venue` - Registers a new venue.
+//! - `add_instruction` - Adds a new instruction.
+//! - `authorize_instruction` - Authorizes an existing instruction.
+//! - `unauthorize_instruction` - Unauthorizes an existing instruction.
+//! - `reject_instruction` - Rejects an existing instruction.
+//! - `claim_receipt` - Claims a signed receipt.
+//! - `unclaim_receipt` - Unclaims a previously claimed receipt.
+//! - `set_venue_filtering` - Enables or disabled venue filtering for a token.
+//! - `allow_venues` - Allows additional venues to create instructions involving an asset.
+//! - `disallow_venues` - Revokes permission given to venues for creating instructions involving a particular asset.
 //!
 #![cfg_attr(not(feature = "std"), no_std)]
 #![recursion_limit = "256"]
@@ -691,7 +697,7 @@ decl_module! {
             Ok(())
         }
 
-        /// Allows additional venues to create instructions involving an asset
+        /// Allows additional venues to create instructions involving an asset.
         ///
         /// * `ticker` - Ticker of the token in question.
         /// * `venues` - Array of venues that are allowed to create instructions for the token in question.
@@ -710,7 +716,7 @@ decl_module! {
             Ok(())
         }
 
-        /// Revokes permission given to venues for creating instructions involving a particular asset  .
+        /// Revokes permission given to venues for creating instructions involving a particular asset.
         ///
         /// * `ticker` - Ticker of the token in question.
         /// * `venues` - Array of venues that are no longer allowed to create instructions for the token in question.
