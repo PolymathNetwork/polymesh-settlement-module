@@ -524,7 +524,7 @@ fn claiming_receipt() {
                 instruction_counter,
                 ReceiptDetails {
                     receipt_uid: 0,
-                    leg_number: 0,
+                    leg_id: 0,
                     signer: AccountKeyring::Alice.public(),
                     signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
                 }
@@ -594,7 +594,7 @@ fn claiming_receipt() {
                 instruction_counter,
                 ReceiptDetails {
                     receipt_uid: 0,
-                    leg_number: 0,
+                    leg_id: 0,
                     signer: AccountKeyring::Alice.public(),
                     signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg2.encode()))
                 }
@@ -608,7 +608,7 @@ fn claiming_receipt() {
             instruction_counter,
             ReceiptDetails {
                 receipt_uid: 0,
-                leg_number: 0,
+                leg_id: 0,
                 signer: AccountKeyring::Alice.public(),
                 signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
             }
@@ -707,7 +707,7 @@ fn claiming_receipt() {
             instruction_counter,
             ReceiptDetails {
                 receipt_uid: 0,
-                leg_number: 0,
+                leg_id: 0,
                 signer: AccountKeyring::Alice.public(),
                 signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg.encode()))
             }
@@ -1479,7 +1479,7 @@ fn basic_fuzzing() {
                         instruction_counter,
                         ReceiptDetails {
                             receipt_uid: receipt.receipt_uid,
-                            leg_number: leg_num,
+                            leg_id: leg_num,
                             signer: AccountKeyring::Alice.public(),
                             signature: OffChainSignature::from(
                                 AccountKeyring::Alice.sign(&receipt.encode())
@@ -1498,7 +1498,7 @@ fn basic_fuzzing() {
                 instruction_counter,
                 ReceiptDetails {
                     receipt_uid: receipt.receipt_uid,
-                    leg_number: leg_num,
+                    leg_id: leg_num,
                     signer: AccountKeyring::Alice.public(),
                     signature: OffChainSignature::from(
                         AccountKeyring::Alice.sign(&receipt.encode())
@@ -1606,7 +1606,7 @@ fn claim_multiple_receipts_during_authorization() {
                 vec![
                     ReceiptDetails {
                         receipt_uid: 0,
-                        leg_number: 0,
+                        leg_id: 0,
                         signer: AccountKeyring::Alice.public(),
                         signature: OffChainSignature::from(
                             AccountKeyring::Alice.sign(&msg1.encode())
@@ -1614,7 +1614,7 @@ fn claim_multiple_receipts_during_authorization() {
                     },
                     ReceiptDetails {
                         receipt_uid: 0,
-                        leg_number: 0,
+                        leg_id: 0,
                         signer: AccountKeyring::Alice.public(),
                         signature: OffChainSignature::from(
                             AccountKeyring::Alice.sign(&msg2.encode())
@@ -1631,13 +1631,13 @@ fn claim_multiple_receipts_during_authorization() {
             vec![
                 ReceiptDetails {
                     receipt_uid: 0,
-                    leg_number: 0,
+                    leg_id: 0,
                     signer: AccountKeyring::Alice.public(),
                     signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg1.encode()))
                 },
                 ReceiptDetails {
                     receipt_uid: 1,
-                    leg_number: 1,
+                    leg_id: 1,
                     signer: AccountKeyring::Alice.public(),
                     signature: OffChainSignature::from(AccountKeyring::Alice.sign(&msg3.encode()))
                 },
