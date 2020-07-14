@@ -36,7 +36,6 @@
 
 use pallet_identity as identity;
 use polymesh_common_utilities::{
-    constants::SETTLEMENT_MODULE_ID,
     traits::{asset::Trait as AssetTrait, identity::Trait as IdentityTrait, CommonTrait},
     Context,
     SystematicIssuers::Settlement as SettlementDID,
@@ -49,8 +48,9 @@ use frame_support::{
     traits::Get, weights::Weight, IterableStorageDoubleMap,
 };
 use frame_system::{self as system, ensure_signed};
-use sp_runtime::traits::{AccountIdConversion, Verify};
-use sp_std::{convert::TryFrom, prelude::*};
+use polymesh_primitives_derive::VecU8StrongTyped;
+use sp_runtime::traits::Verify;
+use sp_std::{collections::btree_set::BTreeSet, convert::TryFrom, prelude::*};
 
 type Identity<T> = identity::Module<T>;
 
@@ -64,6 +64,16 @@ pub trait Trait:
     /// The maximum number of total legs in scheduled instructions that can be executed in a single block.
     /// Any excess instructions are scheduled in later blocks.
     type MaxScheduledInstructionLegsPerBlock: Get<u32>;
+}
+
+// A wrapper for VenueDetails
+#[derive(Decode, Encode, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, VecU8StrongTyped)]
+pub struct VenueDetails(Vec<u8>);
+
+impl Default for VenueDetails {
+    fn default() -> Self {
+        Self("".as_bytes().to_vec())
+    }
 }
 
 /// Status of an instruction
@@ -170,11 +180,11 @@ pub struct Venue {
     /// instructions under this venue (Only needed for the UI)
     pub instructions: Vec<u64>,
     /// Additional details about this venue
-    pub details: Vec<u8>,
+    pub details: VenueDetails,
 }
 
 impl Venue {
-    pub fn new(creator: IdentityId, details: Vec<u8>) -> Self {
+    pub fn new(creator: IdentityId, details: VenueDetails) -> Self {
         Self {
             creator,
             instructions: Vec::new(),
@@ -291,6 +301,8 @@ decl_error! {
         InstructionWaitingSettleBlock,
         /// Offchain signature is invalid
         InvalidSignature,
+        /// Sender and receiver are the same
+        SameSenderReceiver
     }
 }
 
@@ -346,7 +358,7 @@ decl_module! {
         /// # Weight
         /// `200_000 + 50_000 * signers.len()`
         #[weight = 200_000 + 50_000 * u64::try_from(signers.len()).unwrap_or_default()]
-        pub fn create_venue(origin, details: Vec<u8>, signers: Vec<T::AccountId>) -> DispatchResult {
+        pub fn create_venue(origin, details: VenueDetails, signers: Vec<T::AccountId>) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
             let venue = Venue::new(did, details);
@@ -391,18 +403,15 @@ decl_module! {
             // Prepare data to store in storage
             // NB Instruction counter starts from 1
             let instruction_counter = Self::instruction_counter();
-            let mut counter_parties = Vec::with_capacity(legs.len() * 2);
-            let mut tickers = Vec::with_capacity(legs.len());
+            let mut counter_parties = BTreeSet::new();
+            let mut tickers = BTreeSet::new();
             // This is done to create a list of unique CP and tickers involved in the instruction.
             for i in 0..legs.len() {
-                counter_parties.push(legs[i].from);
-                counter_parties.push(legs[i].to);
-                tickers.push(legs[i].asset);
+                ensure!(legs[i].from != legs[i].to, Error::<T>::SameSenderReceiver);
+                counter_parties.insert(legs[i].from);
+                counter_parties.insert(legs[i].to);
+                tickers.insert(legs[i].asset);
             }
-            tickers.sort();
-            tickers.dedup();
-            counter_parties.sort();
-            counter_parties.dedup();
 
             // Check if the venue has required permissions from token owners
             for ticker in &tickers {
@@ -538,9 +547,8 @@ decl_module! {
             );
 
             // Verify that the receipts provided are unique
-            let mut receipt_ids = receipt_details.iter().map(|receipt| (receipt.signer.clone(), receipt.receipt_uid)).collect::<Vec<_>>();
-            receipt_ids.sort();
-            receipt_ids.dedup();
+            let receipt_ids = receipt_details.iter().map(|receipt| (receipt.signer.clone(), receipt.receipt_uid)).collect::<BTreeSet<_>>();
+
             ensure!(
                 receipt_ids.len() == receipt_details.len(),
                 Error::<T>::ReceiptAlreadyClaimed
@@ -585,37 +593,36 @@ decl_module! {
                             legs[i].0,
                             LegStatus::ExecutionToBeSkipped(receipt.signer.clone(), receipt.receipt_uid)
                         );
-                    } else if T::Asset::unsafe_increase_custody_allowance(
-                        did,
-                        legs[i].1.asset,
-                        did,
-                        SettlementDID.as_id(),
-                        legs[i].1.amount
-                    ).is_err() {
-                        // Locking failed. Undo previous locks and leg status updates.
-                        for j in 0..i {
-                            // Receipt was not provided, Tokens need to be unlocked.
-                            if !receipt_details.iter().any(|receipt| receipt.leg_id == legs[i].0) {
-                                T::Asset::unsafe_decrease_custody_allowance(did,
-                                    legs[j].1.asset,
-                                    did,
-                                    SettlementDID.as_id(),
-                                    legs[j].1.amount
-                                );
-                            }
-                            <InstructionLegStatus<T>>::insert(
-                                instruction_id,
-                                legs[i].0,
-                                LegStatus::PendingTokenLock,
-                            );
-                        }
-                        return Err(Error::<T>::FailedToTakeCustodialOwnership.into());
                     } else {
-                        <InstructionLegStatus<T>>::insert(
-                            instruction_id,
-                            legs[i].0,
-                            LegStatus::ExecutionPending,
-                        );
+                        match T::Asset::unsafe_increase_custody_allowance(
+                            did,
+                            legs[i].1.asset,
+                            did,
+                            SettlementDID.as_id(),
+                            legs[i].1.amount
+                        ) {
+                            Ok(_) => <InstructionLegStatus<T>>::insert(instruction_id, legs[i].0, LegStatus::ExecutionPending),
+                            Err(_) => {
+                                // Locking failed. Undo previous locks and leg status updates.
+                                for j in 0..i {
+                                    // Receipt was not provided, Tokens need to be unlocked.
+                                    if !receipt_details.iter().any(|receipt| receipt.leg_id == legs[i].0) {
+                                        T::Asset::unsafe_decrease_custody_allowance(did,
+                                            legs[j].1.asset,
+                                            did,
+                                            SettlementDID.as_id(),
+                                            legs[j].1.amount
+                                        );
+                                    }
+                                    <InstructionLegStatus<T>>::insert(
+                                        instruction_id,
+                                        legs[i].0,
+                                        LegStatus::PendingTokenLock,
+                                    );
+                                }
+                                return Err(Error::<T>::FailedToTakeCustodialOwnership.into());
+                            }
+                        }
                     }
                 }
             }
@@ -705,7 +712,11 @@ decl_module! {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
             ensure!(Self::is_owner(&ticker, did), Error::<T>::Unauthorized);
-            <VenueFiltering>::insert(ticker, enabled);
+            if enabled {
+                <VenueFiltering>::insert(ticker, enabled);
+            } else {
+                <VenueFiltering>::remove(ticker);
+            }
             Self::deposit_event(RawEvent::VenueFiltering(did, ticker, enabled));
             Ok(())
         }
@@ -742,7 +753,7 @@ decl_module! {
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
             ensure!(Self::is_owner(&ticker, did), Error::<T>::Unauthorized);
             for venue in &venues {
-                <VenueAllowList>::insert(&ticker, venue, false);
+                <VenueAllowList>::remove(&ticker, venue);
             }
             Self::deposit_event(RawEvent::VenuesBlocked(did, ticker, venues));
             Ok(())
@@ -763,37 +774,41 @@ impl<T: Trait> Module<T> {
         let max_legs = T::MaxScheduledInstructionLegsPerBlock::get();
 
         for i in 0..scheduled_instructions.len() {
-            legs_executed += Self::execute_instruction(scheduled_instructions[i]);
             // NB The actual legs executed can be a bit more than max legs allowed since an instruction must be settled atomically.
             if legs_executed >= max_legs {
                 // If max legs is triggered, the pending instructions in this block are rescheduled at the end of the next block
                 let mut next_block_instructions =
                     Self::scheduled_instructions(block_number + 1.into());
                 next_block_instructions.extend_from_slice(&scheduled_instructions[i..]);
+                <ScheduledInstructions<T>>::insert(
+                    block_number + 1.into(),
+                    next_block_instructions,
+                );
                 break;
             }
+            legs_executed += Self::execute_instruction(scheduled_instructions[i]);
         }
         (10_000 * legs_executed).into()
     }
 
     fn unsafe_unauthorize_instruction(did: IdentityId, instruction_id: u64) -> DispatchResult {
         // Unlock tokens that were previously locked during the authorization
-        let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
-        for i in 0..legs.len() {
-            if legs[i].1.from == did {
-                match Self::instruction_leg_status(instruction_id, legs[i].0) {
+        let legs = <InstructionLegs<T>>::iter_prefix(instruction_id);
+        for (leg_number, leg_details) in legs {
+            if leg_details.from == did {
+                match Self::instruction_leg_status(instruction_id, leg_number) {
                     LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
                         // Receipt was claimed for this instruction. Therefore, no token unlocking is required, we just unclaim the receipt.
                         <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
                         <InstructionLegStatus<T>>::insert(
                             instruction_id,
-                            legs[i].0,
+                            leg_number,
                             LegStatus::PendingTokenLock,
                         );
                         Self::deposit_event(RawEvent::ReceiptUnclaimed(
                             did,
                             instruction_id,
-                            legs[i].0,
+                            leg_number,
                             receipt_uid,
                             signer,
                         ));
@@ -802,14 +817,14 @@ impl<T: Trait> Module<T> {
                         // Tokens are unlocked
                         T::Asset::unsafe_decrease_custody_allowance(
                             did,
-                            legs[i].1.asset,
+                            leg_details.asset,
                             did,
                             SettlementDID.as_id(),
-                            legs[i].1.amount,
+                            leg_details.amount,
                         );
                         <InstructionLegStatus<T>>::insert(
                             instruction_id,
-                            legs[i].0,
+                            leg_number,
                             LegStatus::PendingTokenLock,
                         );
                     }
@@ -851,32 +866,32 @@ impl<T: Trait> Module<T> {
     }
 
     fn execute_instruction(instruction_id: u64) -> u32 {
-        let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
+        let legs_iter = <InstructionLegs<T>>::iter_prefix(instruction_id);
         let mut instructions_processed: u32 = 0;
 
         if Self::instruction_auths_pending(instruction_id) > 0 {
             // Instruction rejected. Unlock any locked tokens and mark receipts as unused.
             // NB: Leg status is not updated because Instruction related details are deleted after settlement in any case.
-            instructions_processed += u32::try_from(legs.len()).unwrap_or_default();
 
-            for leg in legs {
-                match Self::instruction_leg_status(instruction_id, leg.0) {
+            for (leg_number, leg_details) in legs_iter {
+                instructions_processed += 1;
+                match Self::instruction_leg_status(instruction_id, leg_number) {
                     LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
                         <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
                         Self::deposit_event(RawEvent::ReceiptUnclaimed(
                             SettlementDID.as_id(),
                             instruction_id,
-                            leg.0,
+                            leg_number,
                             receipt_uid,
                             signer,
                         ));
                     }
                     LegStatus::ExecutionPending => T::Asset::unsafe_decrease_custody_allowance(
                         SettlementDID.as_id(),
-                        leg.1.asset,
-                        leg.1.from,
+                        leg_details.asset,
+                        leg_details.from,
                         SettlementDID.as_id(),
-                        leg.1.amount,
+                        leg_details.amount,
                     ),
                     _ => {}
                 }
@@ -889,14 +904,15 @@ impl<T: Trait> Module<T> {
             // All authorizations received, instruction should be settled.
 
             let mut failed = false;
+            let legs = legs_iter.collect::<Vec<_>>();
 
             // Verify that the venue still has the required permissions for the tokens involved.
-            let mut tickers = Vec::with_capacity(legs.len());
+            let mut tickers = BTreeSet::new();
             for i in 0..legs.len() {
-                tickers.push(legs[i].1.asset);
+                tickers.insert(legs[i].1.asset);
             }
-            tickers.sort();
-            tickers.dedup();
+
+            instructions_processed += u32::try_from(legs.len()).unwrap_or_default();
             let venue_id = Self::instruction_details(instruction_id).venue_id;
             for ticker in &tickers {
                 if Self::venue_filtering(ticker) {
@@ -1011,37 +1027,36 @@ impl<T: Trait> Module<T> {
         let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
         for i in 0..legs.len() {
             if legs[i].1.from == did {
-                if T::Asset::unsafe_increase_custody_allowance(
+                match T::Asset::unsafe_increase_custody_allowance(
                     did,
                     legs[i].1.asset,
                     did,
                     SettlementDID.as_id(),
                     legs[i].1.amount,
-                )
-                .is_err()
-                {
-                    // Undo custody locks
-                    for j in 0..i {
-                        T::Asset::unsafe_decrease_custody_allowance(
-                            did,
-                            legs[j].1.asset,
-                            did,
-                            SettlementDID.as_id(),
-                            legs[j].1.amount,
-                        );
-                        <InstructionLegStatus<T>>::insert(
-                            instruction_id,
-                            legs[i].0,
-                            LegStatus::PendingTokenLock,
-                        );
-                    }
-                    return Err(Error::<T>::FailedToTakeCustodialOwnership.into());
-                } else {
-                    <InstructionLegStatus<T>>::insert(
+                ) {
+                    Ok(_) => <InstructionLegStatus<T>>::insert(
                         instruction_id,
                         legs[i].0,
                         LegStatus::ExecutionPending,
-                    );
+                    ),
+                    Err(_) => {
+                        // Undo custody locks
+                        for j in 0..i {
+                            T::Asset::unsafe_decrease_custody_allowance(
+                                did,
+                                legs[j].1.asset,
+                                did,
+                                SettlementDID.as_id(),
+                                legs[j].1.amount,
+                            );
+                            <InstructionLegStatus<T>>::insert(
+                                instruction_id,
+                                legs[i].0,
+                                LegStatus::PendingTokenLock,
+                            );
+                        }
+                        return Err(Error::<T>::FailedToTakeCustodialOwnership.into());
+                    }
                 }
             }
         }

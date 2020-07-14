@@ -9,7 +9,7 @@ use pallet_compliance_manager as compliance_manager;
 use pallet_identity as identity;
 use pallet_settlement::{
     self as settlement, AuthorizationStatus, Instruction, InstructionStatus, Leg, LegStatus,
-    Receipt, ReceiptDetails, SettlementType,
+    Receipt, ReceiptDetails, SettlementType, VenueDetails,
 };
 use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
 use polymesh_primitives::{IdentityId, Ticker};
@@ -41,7 +41,7 @@ fn init(token_name: &[u8], ticker: Ticker, keyring: Public) -> u64 {
     let venue_counter = Settlement::venue_counter();
     assert_ok!(Settlement::create_venue(
         Origin::signed(keyring),
-        vec![13],
+        VenueDetails::default(),
         vec![keyring]
     ));
     venue_counter
@@ -80,14 +80,14 @@ fn venue_registration() {
         let venue_counter = Settlement::venue_counter();
         assert_ok!(Settlement::create_venue(
             alice_signed,
-            vec![13],
+            VenueDetails::default(),
             vec![AccountKeyring::Alice.public(), AccountKeyring::Bob.public()]
         ));
         let venue_info = Settlement::venue_info(venue_counter);
         assert_eq!(Settlement::venue_counter(), venue_counter + 1);
         assert_eq!(venue_info.creator, alice_did);
         assert_eq!(venue_info.instructions.len(), 0);
-        assert_eq!(venue_info.details, vec![13]);
+        assert_eq!(venue_info.details, VenueDetails::default());
         assert_eq!(
             Settlement::venue_signers(venue_counter, AccountKeyring::Alice.public()),
             true
@@ -133,10 +133,6 @@ fn basic_settlement() {
             alice_signed.clone(),
             instruction_counter,
         ));
-        println!(
-            "{:?}",
-            Settlement::instruction_leg_status(instruction_counter, 0)
-        );
 
         assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
         assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
@@ -144,9 +140,6 @@ fn basic_settlement() {
             bob_signed.clone(),
             instruction_counter,
         ));
-
-        let system_events = System::events();
-        println!("{:?}", system_events);
 
         // Instruction should've settled
         assert_eq!(
@@ -251,10 +244,6 @@ fn token_swap() {
             alice_signed.clone(),
             instruction_counter,
         ));
-        println!(
-            "{:?}",
-            Settlement::instruction_leg_status(instruction_counter, 0)
-        );
 
         assert_eq!(
             Settlement::instruction_auths_pending(instruction_counter),
@@ -338,10 +327,6 @@ fn token_swap() {
             alice_signed.clone(),
             instruction_counter,
         ));
-        println!(
-            "{:?}",
-            Settlement::instruction_leg_status(instruction_counter, 0)
-        );
 
         assert_eq!(
             Settlement::instruction_auths_pending(instruction_counter),
@@ -386,9 +371,6 @@ fn token_swap() {
             bob_signed.clone(),
             instruction_counter,
         ));
-
-        let system_events = System::events();
-        println!("{:?}", system_events);
 
         // Instruction should've settled
         assert_eq!(
@@ -536,10 +518,6 @@ fn claiming_receipt() {
             alice_signed.clone(),
             instruction_counter,
         ));
-        println!(
-            "{:?}",
-            Settlement::instruction_leg_status(instruction_counter, 0)
-        );
 
         assert_eq!(
             Settlement::instruction_auths_pending(instruction_counter),
@@ -760,9 +738,6 @@ fn claiming_receipt() {
             bob_signed.clone(),
             instruction_counter,
         ));
-
-        let system_events = System::events();
-        println!("{:?}", system_events);
 
         // Instruction should've settled
         assert_eq!(
@@ -1325,7 +1300,7 @@ fn basic_fuzzing() {
         let venue_counter = Settlement::venue_counter();
         assert_ok!(Settlement::create_venue(
             Origin::signed(AccountKeyring::Alice.public()),
-            vec![13],
+            VenueDetails::default(),
             vec![AccountKeyring::Alice.public()]
         ));
         let mut tickers = Vec::with_capacity(40);
@@ -1710,6 +1685,161 @@ fn claim_multiple_receipts_during_authorization() {
 }
 
 #[test]
+fn overload_settle_on_block() {
+    ExtBuilder::default().build().execute_with(|| {
+        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
+        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let token_name = b"ACME";
+        let ticker = Ticker::try_from(&token_name[..]).unwrap();
+        let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
+        let instruction_counter = Settlement::instruction_counter();
+        let alice_init_balance = Asset::balance_of(&ticker, alice_did);
+        let bob_init_balance = Asset::balance_of(&ticker, bob_did);
+
+        let block_number = System::block_number() + 1;
+
+        let legs = vec![
+            Leg {
+                from: alice_did,
+                to: bob_did,
+                asset: ticker,
+                amount: 1u128,
+            };
+            500
+        ];
+
+        for _ in 0..2 {
+            assert_ok!(Settlement::add_instruction(
+                alice_signed.clone(),
+                venue_counter,
+                SettlementType::SettleOnBlock(block_number),
+                None,
+                legs.clone()
+            ));
+            assert_ok!(Settlement::add_instruction(
+                alice_signed.clone(),
+                venue_counter,
+                SettlementType::SettleOnBlock(block_number + 1),
+                None,
+                legs.clone()
+            ));
+        }
+
+        for i in &[0u64, 1, 3] {
+            assert_ok!(Settlement::authorize_instruction(
+                alice_signed.clone(),
+                instruction_counter + i,
+            ));
+            assert_ok!(Settlement::authorize_instruction(
+                bob_signed.clone(),
+                instruction_counter + i,
+            ));
+        }
+
+        assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
+
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number),
+            vec![instruction_counter, instruction_counter + 2]
+        );
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 1),
+            vec![instruction_counter + 1, instruction_counter + 3]
+        );
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 2).len(),
+            0
+        );
+
+        next_block();
+        // First Instruction should've settled
+        assert_eq!(
+            Asset::balance_of(&ticker, alice_did),
+            alice_init_balance - 500
+        );
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance + 500);
+        assert_eq!(Settlement::scheduled_instructions(block_number).len(), 0);
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 1),
+            vec![
+                instruction_counter + 1,
+                instruction_counter + 3,
+                instruction_counter + 2
+            ]
+        );
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 2).len(),
+            0
+        );
+
+        next_block();
+        // Second instruction should've settled
+        assert_eq!(
+            Asset::balance_of(&ticker, alice_did),
+            alice_init_balance - 1000
+        );
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance + 1000);
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 1).len(),
+            0
+        );
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 2),
+            vec![instruction_counter + 3, instruction_counter + 2]
+        );
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 3).len(),
+            0
+        );
+
+        next_block();
+        // Fourth instruction should've settled
+        assert_eq!(
+            Asset::balance_of(&ticker, alice_did),
+            alice_init_balance - 1500
+        );
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance + 1500);
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 2).len(),
+            0
+        );
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 3),
+            vec![instruction_counter + 2]
+        );
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 4).len(),
+            0
+        );
+
+        assert_err!(
+            Settlement::authorize_instruction(alice_signed.clone(), instruction_counter + 2,),
+            Error::InstructionSettleBlockPassed
+        );
+        next_block();
+        // Third instruction should've settled (Failed due to missing auth)
+        assert_eq!(
+            Asset::balance_of(&ticker, alice_did),
+            alice_init_balance - 1500
+        );
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance + 1500);
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 3).len(),
+            0
+        );
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 4).len(),
+            0
+        );
+        assert_eq!(
+            Settlement::scheduled_instructions(block_number + 5).len(),
+            0
+        );
+    });
+}
+
+#[test]
 fn encode_receipt() {
     ExtBuilder::default().build().execute_with(|| {
         let token_name = [0x01u8];
@@ -1727,7 +1857,6 @@ fn encode_receipt() {
             asset: ticker,
             amount: 100u128,
         };
-        println!("{:?}", &msg1.encode());
         println!("{:?}", AccountKeyring::Alice.sign(&msg1.encode()));
     });
 }
