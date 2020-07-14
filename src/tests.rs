@@ -859,13 +859,6 @@ fn settle_on_block() {
         assert_eq!(Asset::balance_of(&ticker2, alice_did), alice_init_balance2);
         assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
 
-        // assert_err!(
-        //     Settlement::authorize_instruction(
-        //         alice_signed.clone(),
-        //         instruction_counter,
-        //     ),
-        //     Error::InstructionSettleBlockPassed
-        // );
         assert_ok!(Settlement::authorize_instruction(
             alice_signed.clone(),
             instruction_counter,
