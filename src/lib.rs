@@ -57,7 +57,7 @@ type Identity<T> = identity::Module<T>;
 pub trait Trait:
     frame_system::Trait + CommonTrait + IdentityTrait + pallet_timestamp::Trait
 {
-    // The overarching event type.
+    /// The overarching event type.
     type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
     /// Asset module
     type Asset: AssetTrait<Self::Balance, Self::AccountId>;
@@ -66,15 +66,11 @@ pub trait Trait:
     type MaxScheduledInstructionLegsPerBlock: Get<u32>;
 }
 
-// A wrapper for VenueDetails
-#[derive(Decode, Encode, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, VecU8StrongTyped)]
+/// A wrapper for VenueDetails
+#[derive(
+    Decode, Encode, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, VecU8StrongTyped,
+)]
 pub struct VenueDetails(Vec<u8>);
-
-impl Default for VenueDetails {
-    fn default() -> Self {
-        Self("".as_bytes().to_vec())
-    }
-}
 
 /// Status of an instruction
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
