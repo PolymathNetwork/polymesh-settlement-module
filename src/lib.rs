@@ -579,49 +579,34 @@ decl_module! {
             }
 
             // Lock tokens that do not have a receipt attached to their leg.
-            let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
-            for (i, (leg_id, leg_details)) in legs.iter().enumerate() {
-                if leg_details.from == did {
-                    // Receipt for the leg was provided
-                    if let Some(receipt) = receipt_details.iter().find(|receipt| receipt.leg_id == *leg_id) {
-                        <InstructionLegStatus<T>>::insert(
-                            instruction_id,
-                            leg_id,
-                            LegStatus::ExecutionToBeSkipped(receipt.signer.clone(), receipt.receipt_uid)
-                        );
-                    } else {
-                        match T::Asset::unsafe_increase_custody_allowance(
-                            did,
-                            leg_details.asset,
-                            did,
-                            SettlementDID.as_id(),
-                            leg_details.amount
-                        ) {
-                            Ok(_) => <InstructionLegStatus<T>>::insert(instruction_id, leg_id, LegStatus::ExecutionPending),
-                            Err(_) => {
-                                // Locking failed. Undo previous locks and leg status updates.
-                                for (internal_leg_id, internal_leg_details) in legs.iter().take(i) {
-                                    // Receipt was not provided, Tokens need to be unlocked.
-                                    if !receipt_details.iter().any(|receipt| receipt.leg_id == *internal_leg_id) {
-                                        T::Asset::unsafe_decrease_custody_allowance(did,
-                                            internal_leg_details.asset,
-                                            did,
-                                            SettlementDID.as_id(),
-                                            internal_leg_details.amount
-                                        );
-                                    }
-                                    <InstructionLegStatus<T>>::insert(
-                                        instruction_id,
-                                        internal_leg_id,
-                                        LegStatus::PendingTokenLock,
-                                    );
-                                }
-                                return Err(Error::<T>::FailedToTakeCustodialOwnership.into());
+            with_transaction(|| {
+                let legs = <InstructionLegs<T>>::iter_prefix(instruction_id);
+                for (leg_id, leg_details) in legs {
+                    if leg_details.from == did {
+                        // Receipt for the leg was provided
+                        if let Some(receipt) = receipt_details.iter().find(|receipt| receipt.leg_id == leg_id) {
+                            <InstructionLegStatus<T>>::insert(
+                                instruction_id,
+                                leg_id,
+                                LegStatus::ExecutionToBeSkipped(receipt.signer.clone(), receipt.receipt_uid)
+                            );
+                        } else {
+                            if T::Asset::unsafe_increase_custody_allowance(
+                                did,
+                                leg_details.asset,
+                                did,
+                                SettlementDID.as_id(),
+                                leg_details.amount
+                            ).is_err() {
+                                // Rollback all changes done in this transaction block
+                                return Rollback(Err(Error::<T>::FailedToTakeCustodialOwnership));
                             }
+                            <InstructionLegStatus<T>>::insert(instruction_id, leg_id, LegStatus::ExecutionPending);
                         }
                     }
                 }
-            }
+                Commit(Ok(()))
+            })?;
 
             // Update storage
             let auths_pending = Self::instruction_auths_pending(instruction_id).saturating_sub(1);
@@ -1040,43 +1025,31 @@ impl<T: Trait> Module<T> {
             Error::<T>::NoPendingAuth
         );
 
-        // lock tokens
-        let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
-        for (i, (leg_id, leg_details)) in legs.iter().enumerate() {
-            if leg_details.from == did {
-                match T::Asset::unsafe_increase_custody_allowance(
-                    did,
-                    leg_details.asset,
-                    did,
-                    SettlementDID.as_id(),
-                    leg_details.amount,
-                ) {
-                    Ok(_) => <InstructionLegStatus<T>>::insert(
+        with_transaction(|| {
+            let legs = <InstructionLegs<T>>::iter_prefix(instruction_id);
+            for (leg_id, leg_details) in legs {
+                if leg_details.from == did {
+                    if T::Asset::unsafe_increase_custody_allowance(
+                        did,
+                        leg_details.asset,
+                        did,
+                        SettlementDID.as_id(),
+                        leg_details.amount,
+                    )
+                    .is_err()
+                    {
+                        // Rollback all changes done in this transaction block
+                        return Rollback(Err(Error::<T>::FailedToTakeCustodialOwnership));
+                    }
+                    <InstructionLegStatus<T>>::insert(
                         instruction_id,
                         leg_id,
                         LegStatus::ExecutionPending,
-                    ),
-                    Err(_) => {
-                        // Undo custody locks
-                        for (internal_leg_id, internal_leg_details) in legs.iter().take(i) {
-                            T::Asset::unsafe_decrease_custody_allowance(
-                                did,
-                                internal_leg_details.asset,
-                                did,
-                                SettlementDID.as_id(),
-                                internal_leg_details.amount,
-                            );
-                            <InstructionLegStatus<T>>::insert(
-                                instruction_id,
-                                internal_leg_id,
-                                LegStatus::PendingTokenLock,
-                            );
-                        }
-                        return Err(Error::<T>::FailedToTakeCustodialOwnership.into());
-                    }
+                    );
                 }
             }
-        }
+            Commit(Ok(()))
+        })?;
 
         let auths_pending = Self::instruction_auths_pending(instruction_id);
 
