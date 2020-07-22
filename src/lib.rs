@@ -739,33 +739,10 @@ decl_module! {
             Self::deposit_event(RawEvent::VenuesBlocked(did, ticker, venues));
             Ok(())
         }
-
-        #[weight = 200_000]
-        pub fn aaaa(origin, success: bool) -> DispatchResult {
-            if with_transaction(|| {
-                let output = Self::test_rollback(success);
-                match output {
-                    Ok(_) => Commit(output),
-                    _ => Rollback(output),
-                }
-            }).is_err() {
-                Self::deposit_event(RawEvent::InstructionUnauthorized(IdentityId::default(), <InstructionCounter>::get()));
-            }
-            Ok(())
-        }
     }
 }
 
 impl<T: Trait> Module<T> {
-    fn test_rollback(success: bool) -> DispatchResult {
-        Self::deposit_event(RawEvent::InstructionAuthorized(
-            IdentityId::default(),
-            <InstructionCounter>::get(),
-        ));
-        <InstructionCounter>::mutate(|instruction_counter| *instruction_counter += 1);
-        ensure!(success, Error::<T>::InstructionNotAuthorized);
-        Ok(())
-    }
     /// Returns true if `sender_did` is the owner of `ticker` asset.
     fn is_owner(ticker: &Ticker, sender_did: IdentityId) -> bool {
         T::Asset::is_owner(ticker, sender_did)
@@ -870,50 +847,21 @@ impl<T: Trait> Module<T> {
     }
 
     fn execute_instruction(instruction_id: u64) -> u32 {
-        let legs_iter = <InstructionLegs<T>>::iter_prefix(instruction_id);
-        let mut instructions_processed: u32 = 0;
-
+        let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
+        let instructions_processed: u32 = u32::try_from(legs.len()).unwrap_or_default();
         if Self::instruction_auths_pending(instruction_id) > 0 {
             // Instruction rejected. Unlock any locked tokens and mark receipts as unused.
             // NB: Leg status is not updated because Instruction related details are deleted after settlement in any case.
-
-            for (leg_id, leg_details) in legs_iter {
-                instructions_processed += 1;
-                match Self::instruction_leg_status(instruction_id, leg_id) {
-                    LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
-                        <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
-                        Self::deposit_event(RawEvent::ReceiptUnclaimed(
-                            SettlementDID.as_id(),
-                            instruction_id,
-                            leg_id,
-                            receipt_uid,
-                            signer,
-                        ));
-                    }
-                    LegStatus::ExecutionPending => T::Asset::unsafe_decrease_custody_allowance(
-                        SettlementDID.as_id(),
-                        leg_details.asset,
-                        leg_details.from,
-                        SettlementDID.as_id(),
-                        leg_details.amount,
-                    ),
-                    _ => {}
-                }
-            }
+            Self::unchecked_release_locks(instruction_id, legs);
             Self::deposit_event(RawEvent::InstructionRejected(
                 SettlementDID.as_id(),
                 instruction_id,
             ));
         } else {
             // All authorizations received, instruction should be settled.
-
             let mut failed = false;
-            let legs = legs_iter.collect::<Vec<_>>();
-            instructions_processed += u32::try_from(legs.len()).unwrap_or_default();
-
             // Verify that the venue still has the required permissions for the tokens involved.
             let tickers: BTreeSet<Ticker> = legs.iter().map(|leg| leg.1.asset).collect();
-
             let venue_id = Self::instruction_details(instruction_id).venue_id;
             for ticker in &tickers {
                 if Self::venue_filtering(ticker) && !Self::venue_allow_list(ticker, venue_id) {
@@ -927,80 +875,44 @@ impl<T: Trait> Module<T> {
             }
 
             if !failed {
-                for (i, (leg_id, leg_details)) in legs.iter().enumerate() {
-                    let status = Self::instruction_leg_status(instruction_id, leg_id);
-                    if status == LegStatus::ExecutionPending {
-                        // Transfer the asset.
-                        if T::Asset::unsafe_transfer_by_custodian(
-                            SettlementDID.as_id(),
-                            leg_details.asset,
-                            leg_details.from,
-                            leg_details.to,
-                            leg_details.amount,
-                        )
-                        .is_err()
-                        {
-                            // Transfer failed, roll back previous transfers and unclaim all receipts.
-                            failed = true;
-                            Self::deposit_event(RawEvent::LegFailedExecution(
+                match with_transaction(|| {
+                    for (leg_id, leg_details) in legs.iter() {
+                        let status = Self::instruction_leg_status(instruction_id, leg_id);
+                        if status == LegStatus::ExecutionPending {
+                            // Transfer the asset.
+                            if T::Asset::unsafe_transfer_by_custodian(
                                 SettlementDID.as_id(),
-                                instruction_id,
-                                *leg_id,
-                            ));
-                            Self::deposit_event(RawEvent::InstructionFailed(
-                                SettlementDID.as_id(),
-                                instruction_id,
-                            ));
-
-                            for (j, (internal_leg_id, internal_leg_details)) in
-                                legs.iter().enumerate()
+                                leg_details.asset,
+                                leg_details.from,
+                                leg_details.to,
+                                leg_details.amount,
+                            )
+                            .is_err()
                             {
-                                match Self::instruction_leg_status(instruction_id, internal_leg_id)
-                                {
-                                    LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
-                                        // Unclaim all receipts
-                                        <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
-                                        Self::deposit_event(RawEvent::ReceiptUnclaimed(
-                                            SettlementDID.as_id(),
-                                            instruction_id,
-                                            *internal_leg_id,
-                                            receipt_uid,
-                                            signer,
-                                        ));
-                                    }
-                                    LegStatus::ExecutionPending => {
-                                        if j < i {
-                                            // Roll back only the transfers that succeeded without problems.
-                                            T::Asset::unsafe_system_transfer(
-                                                SettlementDID.as_id(),
-                                                &internal_leg_details.asset,
-                                                internal_leg_details.to,
-                                                internal_leg_details.from,
-                                                internal_leg_details.amount,
-                                            );
-                                        } else {
-                                            // Remove custodian allowance from transfers that failed or were not attempted.
-                                            T::Asset::unsafe_decrease_custody_allowance(
-                                                SettlementDID.as_id(),
-                                                internal_leg_details.asset,
-                                                internal_leg_details.from,
-                                                SettlementDID.as_id(),
-                                                internal_leg_details.amount,
-                                            );
-                                        }
-                                    }
-                                    _ => {}
-                                }
+                                return Rollback(Err(leg_id));
                             }
-                            break;
                         }
                     }
-                }
-                if !failed {
-                    Self::deposit_event(RawEvent::InstructionExecuted(
-                        SettlementDID.as_id(),
-                        instruction_id,
-                    ));
+                    Commit(Ok(()))
+                }) {
+                    Ok(_) => {
+                        Self::deposit_event(RawEvent::InstructionExecuted(
+                            SettlementDID.as_id(),
+                            instruction_id,
+                        ));
+                    }
+                    Err(leg_id) => {
+                        Self::deposit_event(RawEvent::LegFailedExecution(
+                            SettlementDID.as_id(),
+                            instruction_id,
+                            leg_id.clone(),
+                        ));
+                        Self::deposit_event(RawEvent::InstructionFailed(
+                            SettlementDID.as_id(),
+                            instruction_id,
+                        ));
+                        Self::unchecked_release_locks(instruction_id, legs);
+                    }
                 }
             }
         }
@@ -1125,5 +1037,30 @@ impl<T: Trait> Module<T> {
             signer,
         ));
         Ok(())
+    }
+
+    fn unchecked_release_locks(instruction_id: u64, legs: Vec<(u64, Leg<T::Balance>)>) {
+        for (leg_id, leg_details) in legs.iter() {
+            match Self::instruction_leg_status(instruction_id, leg_id) {
+                LegStatus::ExecutionToBeSkipped(signer, receipt_uid) => {
+                    <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
+                    Self::deposit_event(RawEvent::ReceiptUnclaimed(
+                        SettlementDID.as_id(),
+                        instruction_id,
+                        *leg_id,
+                        receipt_uid,
+                        signer,
+                    ));
+                }
+                LegStatus::ExecutionPending => T::Asset::unsafe_decrease_custody_allowance(
+                    SettlementDID.as_id(),
+                    leg_details.asset,
+                    leg_details.from,
+                    SettlementDID.as_id(),
+                    leg_details.amount,
+                ),
+                _ => {}
+            }
+        }
     }
 }
