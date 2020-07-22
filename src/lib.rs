@@ -43,6 +43,7 @@ use polymesh_common_utilities::{
 use polymesh_primitives::{IdentityId, Ticker};
 
 use codec::{Decode, Encode};
+use frame_support::storage::{with_transaction, TransactionOutcome::*};
 use frame_support::{
     decl_error, decl_event, decl_module, decl_storage, dispatch::DispatchResult, ensure,
     traits::Get, weights::Weight, IterableStorageDoubleMap,
@@ -51,7 +52,6 @@ use frame_system::{self as system, ensure_signed};
 use polymesh_primitives_derive::VecU8StrongTyped;
 use sp_runtime::traits::Verify;
 use sp_std::{collections::btree_set::BTreeSet, convert::TryFrom, prelude::*};
-
 type Identity<T> = identity::Module<T>;
 
 pub trait Trait:
@@ -754,10 +754,33 @@ decl_module! {
             Self::deposit_event(RawEvent::VenuesBlocked(did, ticker, venues));
             Ok(())
         }
+
+        #[weight = 200_000]
+        pub fn aaaa(origin, success: bool) -> DispatchResult {
+            if with_transaction(|| {
+                let output = Self::test_rollback(success);
+                match output {
+                    Ok(_) => Commit(output),
+                    _ => Rollback(output),
+                }
+            }).is_err() {
+                Self::deposit_event(RawEvent::InstructionUnauthorized(IdentityId::default(), <InstructionCounter>::get()));
+            }
+            Ok(())
+        }
     }
 }
 
 impl<T: Trait> Module<T> {
+    fn test_rollback(success: bool) -> DispatchResult {
+        Self::deposit_event(RawEvent::InstructionAuthorized(
+            IdentityId::default(),
+            <InstructionCounter>::get(),
+        ));
+        <InstructionCounter>::mutate(|instruction_counter| *instruction_counter += 1);
+        ensure!(success, Error::<T>::InstructionNotAuthorized);
+        Ok(())
+    }
     /// Returns true if `sender_did` is the owner of `ticker` asset.
     fn is_owner(ticker: &Ticker, sender_did: IdentityId) -> bool {
         T::Asset::is_owner(ticker, sender_did)
