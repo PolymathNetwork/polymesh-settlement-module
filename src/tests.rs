@@ -15,8 +15,8 @@ use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
 use polymesh_primitives::{IdentityId, Ticker};
 
 use codec::Encode;
-use frame_support::{assert_err, assert_ok};
-use rand::prelude::*;
+use frame_support::{assert_noop, assert_ok};
+use rand::{prelude::*, seq::SliceRandom, thread_rng};
 use sp_core::sr25519::Public;
 use sp_runtime::AnySignature;
 use std::collections::HashMap;
@@ -150,6 +150,42 @@ fn basic_settlement() {
             Asset::balance_of(&ticker, bob_did),
             bob_init_balance + amount
         );
+    });
+}
+
+#[test]
+fn overdraft_failure() {
+    ExtBuilder::default().build().execute_with(|| {
+        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
+        let (_bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let token_name = b"ACME";
+        let ticker = Ticker::try_from(&token_name[..]).unwrap();
+        let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
+        let instruction_counter = Settlement::instruction_counter();
+        let alice_init_balance = Asset::balance_of(&ticker, alice_did);
+        let bob_init_balance = Asset::balance_of(&ticker, bob_did);
+        let amount = 100_000_000u128;
+        assert_ok!(Settlement::add_instruction(
+            alice_signed.clone(),
+            venue_counter,
+            SettlementType::SettleOnAuthorization,
+            None,
+            vec![Leg {
+                from: alice_did,
+                to: bob_did,
+                asset: ticker,
+                amount: amount
+            }]
+        ));
+        assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
+        assert_noop!(
+            Settlement::authorize_instruction(alice_signed.clone(), instruction_counter,),
+            Error::FailedToTakeCustodialOwnership
+        );
+
+        assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
+        assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
     });
 }
 
@@ -500,7 +536,7 @@ fn claiming_receipt() {
             amount: amount,
         };
 
-        assert_err!(
+        assert_noop!(
             Settlement::claim_receipt(
                 alice_signed.clone(),
                 instruction_counter,
@@ -566,7 +602,7 @@ fn claiming_receipt() {
             amount: amount,
         };
 
-        assert_err!(
+        assert_noop!(
             Settlement::claim_receipt(
                 alice_signed.clone(),
                 instruction_counter,
@@ -1232,7 +1268,7 @@ fn venue_filtering() {
             ticker,
             true
         ));
-        assert_err!(
+        assert_noop!(
             Settlement::add_instruction(
                 alice_signed.clone(),
                 venue_counter,
@@ -1418,7 +1454,7 @@ fn basic_fuzzing() {
 
         // Authorize instructions and do a few authorize/unauthorize in between
         for signer in signers.clone() {
-            for _ in 0..3 {
+            for _ in 0..2 {
                 if random() {
                     assert_ok!(Settlement::authorize_instruction(
                         signer.clone(),
@@ -1440,7 +1476,7 @@ fn basic_fuzzing() {
         for receipt in receipts {
             let leg_num = u64::try_from(*receipt_legs.get(&(receipt.encode())).unwrap()).unwrap();
             let signer = &signers[dids.iter().position(|&from| from == receipt.from).unwrap()];
-            for _ in 0..3 {
+            for _ in 0..2 {
                 if random() {
                     assert_ok!(Settlement::claim_receipt(
                         signer.clone(),
@@ -1475,6 +1511,17 @@ fn basic_fuzzing() {
             ));
         }
 
+        let fail: bool = random();
+        if fail {
+            let mut rng = thread_rng();
+            let signer_to_fail = signers.choose(&mut rng);
+            assert_ok!(Settlement::unauthorize_instruction(
+                signer_to_fail.unwrap().clone(),
+                instruction_counter,
+            ));
+        }
+        println!("{}", fail);
+
         next_block();
 
         for i in 0..40 {
@@ -1484,15 +1531,27 @@ fn basic_fuzzing() {
                     0
                 );
                 assert_eq!(Asset::total_custody_allowance((&tickers[i], dids[j])), 0);
-                assert_eq!(
-                    Asset::balance_of(&tickers[i], dids[j]),
-                    u128::try_from(
-                        *balances
-                            .get(&(tickers[i], dids[j], "final").encode())
-                            .unwrap()
-                    )
-                    .unwrap()
-                );
+                if fail {
+                    assert_eq!(
+                        Asset::balance_of(&tickers[i], dids[j]),
+                        u128::try_from(
+                            *balances
+                                .get(&(tickers[i], dids[j], "init").encode())
+                                .unwrap()
+                        )
+                        .unwrap()
+                    );
+                } else {
+                    assert_eq!(
+                        Asset::balance_of(&tickers[i], dids[j]),
+                        u128::try_from(
+                            *balances
+                                .get(&(tickers[i], dids[j], "final").encode())
+                                .unwrap()
+                        )
+                        .unwrap()
+                    );
+                }
             }
         }
     });
@@ -1567,7 +1626,7 @@ fn claim_multiple_receipts_during_authorization() {
             amount: amount,
         };
 
-        assert_err!(
+        assert_noop!(
             Settlement::authorize_with_receipts(
                 alice_signed.clone(),
                 instruction_counter,
@@ -1806,7 +1865,7 @@ fn overload_settle_on_block() {
             0
         );
 
-        assert_err!(
+        assert_noop!(
             Settlement::authorize_instruction(alice_signed.clone(), instruction_counter + 2,),
             Error::InstructionSettleBlockPassed
         );
