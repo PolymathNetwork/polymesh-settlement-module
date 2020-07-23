@@ -1520,7 +1520,6 @@ fn basic_fuzzing() {
                 instruction_counter,
             ));
         }
-        println!("{}", fail);
 
         next_block();
 
