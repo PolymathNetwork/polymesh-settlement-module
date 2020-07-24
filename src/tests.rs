@@ -159,8 +159,10 @@ fn basic_settlement() {
 #[test]
 fn overdraft_failure() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (_bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let _bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
