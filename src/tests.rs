@@ -1,5 +1,5 @@
 use super::{
-    storage::{make_account, TestStorage},
+    storage::{register_keyring_account, TestStorage},
     ExtBuilder,
 };
 
@@ -76,7 +76,8 @@ fn next_block() {
 #[test]
 fn venue_registration() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let venue_counter = Settlement::venue_counter();
         assert_ok!(Settlement::create_venue(
             alice_signed,
@@ -106,8 +107,10 @@ fn venue_registration() {
 #[test]
 fn basic_settlement() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
@@ -156,8 +159,10 @@ fn basic_settlement() {
 #[test]
 fn overdraft_failure() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (_bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let _bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
@@ -192,8 +197,10 @@ fn overdraft_failure() {
 #[test]
 fn token_swap() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let token_name2 = b"ACME2";
@@ -444,8 +451,10 @@ fn token_swap() {
 #[test]
 fn claiming_receipt() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let token_name2 = b"ACME2";
@@ -805,8 +814,10 @@ fn claiming_receipt() {
 #[test]
 fn settle_on_block() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let token_name2 = b"ACME2";
@@ -1025,8 +1036,10 @@ fn settle_on_block() {
 #[test]
 fn failed_execution() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let token_name2 = b"ACME2";
@@ -1242,8 +1255,10 @@ fn failed_execution() {
 #[test]
 fn venue_filtering() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
@@ -1322,10 +1337,14 @@ fn venue_filtering() {
 #[test]
 fn basic_fuzzing() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
-        let (charlie_signed, charlie_did) = make_account(AccountKeyring::Charlie.public()).unwrap();
-        let (dave_signed, dave_did) = make_account(AccountKeyring::Dave.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
+        let charlie_signed = Origin::signed(AccountKeyring::Charlie.public());
+        let charlie_did = register_keyring_account(AccountKeyring::Charlie).unwrap();
+        let dave_signed = Origin::signed(AccountKeyring::Dave.public());
+        let dave_did = register_keyring_account(AccountKeyring::Dave).unwrap();
         let venue_counter = Settlement::venue_counter();
         assert_ok!(Settlement::create_venue(
             Origin::signed(AccountKeyring::Alice.public()),
@@ -1559,8 +1578,10 @@ fn basic_fuzzing() {
 #[test]
 fn claim_multiple_receipts_during_authorization() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let token_name2 = b"ACME2";
@@ -1738,8 +1759,10 @@ fn claim_multiple_receipts_during_authorization() {
 #[test]
 fn overload_settle_on_block() {
     ExtBuilder::default().build().execute_with(|| {
-        let (alice_signed, alice_did) = make_account(AccountKeyring::Alice.public()).unwrap();
-        let (bob_signed, bob_did) = make_account(AccountKeyring::Bob.public()).unwrap();
+        let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+        let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+        let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+        let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
         let token_name = b"ACME";
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
