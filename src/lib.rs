@@ -390,60 +390,7 @@ decl_module! {
         ) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
-
-            // Check if a venue exists and the sender is the creator of the venue
-            ensure!(<VenueInfo>::contains_key(venue_id), Error::<T>::InvalidVenue);
-            let mut venue = Self::venue_info(venue_id);
-            ensure!(venue.creator == did, Error::<T>::Unauthorized);
-
-            // Prepare data to store in storage
-            // NB Instruction counter starts from 1
-            let instruction_counter = Self::instruction_counter();
-            let mut counter_parties = BTreeSet::new();
-            let mut tickers = BTreeSet::new();
-            // This is done to create a list of unique CP and tickers involved in the instruction.
-            for leg in &legs {
-                ensure!(leg.from != leg.to, Error::<T>::SameSenderReceiver);
-                counter_parties.insert(leg.from);
-                counter_parties.insert(leg.to);
-                tickers.insert(leg.asset);
-            }
-
-            // Check if the venue has required permissions from token owners
-            for ticker in &tickers {
-                if Self::venue_filtering(ticker) {
-                    ensure!(Self::venue_allow_list(ticker, venue_id), Error::<T>::UnauthorizedVenue);
-                }
-            }
-
-            venue.instructions.push(instruction_counter);
-            let instruction = Instruction {
-                instruction_id: instruction_counter,
-                venue_id: venue_id,
-                status: InstructionStatus::Pending,
-                settlement_type: settlement_type,
-                created_at: Some(<pallet_timestamp::Module<T>>::get()),
-                valid_from: valid_from
-            };
-
-            // write data to storage
-            for counter_party in &counter_parties {
-                <UserAuths>::insert(counter_party, instruction_counter, AuthorizationStatus::Pending);
-            }
-
-            for (i, leg) in legs.iter().enumerate() {
-                <InstructionLegs<T>>::insert(instruction_counter, u64::try_from(i).unwrap_or_default(), leg.clone());
-            }
-
-            if let SettlementType::SettleOnBlock(block_number) = settlement_type {
-                <ScheduledInstructions<T>>::mutate(block_number, |instruction_ids| instruction_ids.push(instruction_counter));
-            }
-
-            <InstructionDetails<T>>::insert(instruction_counter, instruction);
-            <InstructionAuthsPending>::insert(instruction_counter, u64::try_from(counter_parties.len()).unwrap_or_default());
-            <VenueInfo>::insert(venue_id, venue);
-            <InstructionCounter>::put(instruction_counter + 1);
-            Self::deposit_event(RawEvent::InstructionCreated(did, venue_id, instruction_counter, settlement_type, valid_from, legs));
+            Self::base_add_instruction(did, venue_id, settlement_type, valid_from, legs)?;
             Ok(())
         }
 
@@ -745,6 +692,91 @@ impl<T: Trait> Module<T> {
         T::Asset::is_owner(ticker, sender_did)
     }
 
+    pub fn base_add_instruction(
+        did: IdentityId,
+        venue_id: u64,
+        settlement_type: SettlementType<T::BlockNumber>,
+        valid_from: Option<T::Moment>,
+        legs: Vec<Leg<T::Balance>>,
+    ) -> Result<u64, Error<T>> {
+        // Check if a venue exists and the sender is the creator of the venue
+        let mut venue = Self::venue_info(venue_id);
+        ensure!(venue.creator == did, Error::<T>::Unauthorized);
+
+        // Prepare data to store in storage
+        // NB Instruction counter starts from 1
+        let instruction_counter = Self::instruction_counter();
+        let mut counter_parties = BTreeSet::new();
+        let mut tickers = BTreeSet::new();
+        // This is done to create a list of unique CP and tickers involved in the instruction.
+        for leg in &legs {
+            ensure!(leg.from != leg.to, Error::<T>::SameSenderReceiver);
+            counter_parties.insert(leg.from);
+            counter_parties.insert(leg.to);
+            tickers.insert(leg.asset);
+        }
+
+        // Check if the venue has required permissions from token owners
+        for ticker in &tickers {
+            if Self::venue_filtering(ticker) {
+                ensure!(
+                    Self::venue_allow_list(ticker, venue_id),
+                    Error::<T>::UnauthorizedVenue
+                );
+            }
+        }
+
+        let instruction = Instruction {
+            instruction_id: instruction_counter,
+            venue_id: venue_id,
+            status: InstructionStatus::Pending,
+            settlement_type: settlement_type,
+            created_at: Some(<pallet_timestamp::Module<T>>::get()),
+            valid_from: valid_from,
+        };
+
+        // write data to storage
+        for counter_party in &counter_parties {
+            <UserAuths>::insert(
+                counter_party,
+                instruction_counter,
+                AuthorizationStatus::Pending,
+            );
+        }
+
+        for (i, leg) in legs.iter().enumerate() {
+            <InstructionLegs<T>>::insert(
+                instruction_counter,
+                u64::try_from(i).unwrap_or_default(),
+                leg.clone(),
+            );
+        }
+
+        if let SettlementType::SettleOnBlock(block_number) = settlement_type {
+            <ScheduledInstructions<T>>::mutate(block_number, |instruction_ids| {
+                instruction_ids.push(instruction_counter)
+            });
+        }
+
+        <InstructionDetails<T>>::insert(instruction_counter, instruction);
+        <InstructionAuthsPending>::insert(
+            instruction_counter,
+            u64::try_from(counter_parties.len()).unwrap_or_default(),
+        );
+        venue.instructions.push(instruction_counter);
+        <VenueInfo>::insert(venue_id, venue);
+        <InstructionCounter>::put(instruction_counter + 1);
+        Self::deposit_event(RawEvent::InstructionCreated(
+            did,
+            venue_id,
+            instruction_counter,
+            settlement_type,
+            valid_from,
+            legs,
+        ));
+        Ok(instruction_counter)
+    }
+
     /// Settles scheduled instructions. This function is called at the start of every block.
     pub fn on_initialize(block_number: T::BlockNumber) -> Weight {
         let scheduled_instructions = <ScheduledInstructions<T>>::take(block_number);
@@ -921,7 +953,7 @@ impl<T: Trait> Module<T> {
         instructions_processed
     }
 
-    fn unsafe_authorize_instruction(did: IdentityId, instruction_id: u64) -> DispatchResult {
+    pub fn unsafe_authorize_instruction(did: IdentityId, instruction_id: u64) -> DispatchResult {
         Self::ensure_instruction_validity(instruction_id)?;
 
         // checks if the sender is a counter party with a pending or rejected authorization
