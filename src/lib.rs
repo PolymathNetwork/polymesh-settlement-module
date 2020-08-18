@@ -765,7 +765,7 @@ impl<T: Trait> Module<T> {
     ) -> Result<u64, DispatchError> {
         // Check whether the no. of legs within the limit or not.
         ensure!(
-            u32::try_from(legs.len()).unwrap_or(0) <= T::MaxLegsInAInstruction::get(),
+            u32::try_from(legs.len()).unwrap_or_default() <= T::MaxLegsInAInstruction::get(),
             Error::<T>::LegsCountExceededMaxLimit
         );
         // Check if a venue exists and the sender is the creator of the venue
