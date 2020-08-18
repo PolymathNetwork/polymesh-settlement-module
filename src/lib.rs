@@ -36,7 +36,11 @@
 
 use pallet_identity as identity;
 use polymesh_common_utilities::{
-    traits::{asset::Trait as AssetTrait, identity::Trait as IdentityTrait, CommonTrait},
+    traits::{
+        asset::{Trait as AssetTrait, GAS_LIMIT},
+        identity::Trait as IdentityTrait,
+        CommonTrait,
+    },
     Context,
     SystematicIssuers::Settlement as SettlementDID,
 };
@@ -45,12 +49,16 @@ use polymesh_primitives::{IdentityId, Ticker};
 use codec::{Decode, Encode};
 use frame_support::storage::{with_transaction, TransactionOutcome::*};
 use frame_support::{
-    decl_error, decl_event, decl_module, decl_storage, dispatch::DispatchResult, ensure,
-    traits::Get, weights::Weight, IterableStorageDoubleMap,
+    decl_error, decl_event, decl_module, decl_storage,
+    dispatch::{DispatchError, DispatchResult, DispatchResultWithPostInfo},
+    ensure,
+    traits::Get,
+    weights::Weight,
+    IterableStorageDoubleMap,
 };
 use frame_system::{self as system, ensure_signed};
 use polymesh_primitives_derive::VecU8StrongTyped;
-use sp_runtime::traits::Verify;
+use sp_runtime::traits::{Verify, Zero};
 use sp_std::{collections::btree_set::BTreeSet, convert::TryFrom, prelude::*};
 type Identity<T> = identity::Module<T>;
 
@@ -64,6 +72,8 @@ pub trait Trait:
     /// The maximum number of total legs in scheduled instructions that can be executed in a single block.
     /// Any excess instructions are scheduled in later blocks.
     type MaxScheduledInstructionLegsPerBlock: Get<u32>;
+    /// The maximum number of total legs allowed for a instruction can have.
+    type MaxLegsInAInstruction: Get<u32>;
 }
 
 /// A wrapper for VenueDetails
@@ -217,6 +227,56 @@ pub struct ReceiptDetails<AccountId, OffChainSignature> {
     pub signature: OffChainSignature,
 }
 
+pub mod weight_for {
+    use super::*;
+
+    pub fn weight_for_execute_instruction_if_auth_no_pending<T: Trait>(
+        weight_for_custodian_transfer: Weight,
+    ) -> Weight {
+        T::DbWeight::get()
+            .reads(4) // Weight for read
+            .saturating_add(150_000_000) // General weight
+            .saturating_add(weight_for_custodian_transfer) // Weight for custodian transfer
+    }
+
+    pub fn weight_for_execute_instruction_if_auth_pending<T: Trait>() -> Weight {
+        T::DbWeight::get()
+            .reads_writes(2, 1) // For read and write
+            .saturating_add(900_000_000) // Mocking unchecked_release_locks() function weight.
+    }
+
+    pub fn weight_for_authorize_with_receipts<T: Trait>(no_of_receipts: u32) -> Weight {
+        T::DbWeight::get()
+            .reads_writes(6, 3) // weight for read and write
+            .saturating_add((no_of_receipts * 80_000_000).into()) // Weight for receipts.
+            .saturating_add(
+                T::DbWeight::get()
+                    .reads_writes(3, 1)
+                    .saturating_mul(no_of_receipts.into()),
+            ) // weight for read and write related to receipts.
+    }
+
+    pub fn weight_for_authorize_instruction<T: Trait>() -> Weight {
+        T::DbWeight::get()
+            .reads_writes(5, 3) // weight for read and writes
+            .saturating_add(600_000_000)
+    }
+
+    pub fn weight_for_reject_instruction<T: Trait>() -> Weight {
+        T::DbWeight::get()
+            .reads_writes(3, 2) // weight for read and writes
+            .saturating_add(500_000_000) // Lump-sum weight for `unsafe_unauthorize_instruction()`
+    }
+
+    pub fn weight_for_transfer<T: Trait>() -> Weight {
+        GAS_LIMIT
+            .saturating_mul(
+                (T::Asset::max_number_of_tm_extension() * T::MaxLegsInAInstruction::get()).into(),
+            )
+            .saturating_add(70_000_000) // Weight for compliance manager
+    }
+}
+
 decl_event!(
     pub enum Event<T>
     where
@@ -298,7 +358,9 @@ decl_error! {
         /// Offchain signature is invalid
         InvalidSignature,
         /// Sender and receiver are the same
-        SameSenderReceiver
+        SameSenderReceiver,
+        /// Maximum numbers of legs in a instruction > `MaxLegsInAInstruction`.
+        LegsCountExceededMaxLimit
     }
 }
 
@@ -345,6 +407,8 @@ decl_module! {
         fn deposit_event() = default;
 
         const MaxScheduledInstructionLegsPerBlock: u32 = T::MaxScheduledInstructionLegsPerBlock::get();
+
+        const MaxLegsInAInstruction: u32 = T::MaxLegsInAInstruction::get();
 
         /// Registers a new venue.
         ///
@@ -398,8 +462,10 @@ decl_module! {
         ///
         /// # Arguments
         /// * `instruction_id` - Instruction id to authorize.
-        #[weight = 1_000_000]
-        pub fn authorize_instruction(origin, instruction_id: u64) -> DispatchResult {
+        #[weight = weight_for::weight_for_authorize_instruction::<T>()
+            + weight_for::weight_for_transfer::<T>() // Maximum weight for `execute_instruction()`
+        ]
+        pub fn authorize_instruction(origin, instruction_id: u64) -> DispatchResultWithPostInfo {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
 
@@ -408,11 +474,9 @@ decl_module! {
 
             // Execute the instruction if conditions are met
             let auths_pending = Self::instruction_auths_pending(instruction_id);
-            if auths_pending == 0 && Self::instruction_details(instruction_id).settlement_type == SettlementType::SettleOnAuthorization {
-                Self::execute_instruction(instruction_id);
-            }
+            let weight_for_instruction_execution = Self::is_instruction_executed(auths_pending, Self::instruction_details(instruction_id).settlement_type, instruction_id);
 
-            Ok(())
+            Ok(Some(weight_for::weight_for_authorize_instruction::<T>() + weight_for_instruction_execution).into())
         }
 
         /// Unauthorizes an existing instruction.
@@ -437,8 +501,10 @@ decl_module! {
         ///
         /// # Arguments
         /// * `instruction_id` - Instruction id to reject.
-        #[weight = 1_000_000]
-        pub fn reject_instruction(origin, instruction_id: u64) -> DispatchResult {
+        #[weight = weight_for::weight_for_reject_instruction::<T>()
+            + weight_for::weight_for_transfer::<T>() // Maximum weight for `execute_instruction()`
+        ]
+        pub fn reject_instruction(origin, instruction_id: u64) -> DispatchResultWithPostInfo {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
 
@@ -457,12 +523,10 @@ decl_module! {
             <AuthsReceived>::insert(instruction_id, did, AuthorizationStatus::Rejected);
 
             // Execute the instruction if it was meant to be executed on authorization
-            if Self::instruction_details(instruction_id).settlement_type == SettlementType::SettleOnAuthorization {
-                Self::execute_instruction(instruction_id);
-            }
+            let weight_for_instruction_execution = Self::is_instruction_executed(Zero::zero(), Self::instruction_details(instruction_id).settlement_type, instruction_id);
 
             Self::deposit_event(RawEvent::InstructionRejected(did, instruction_id));
-            Ok(())
+            Ok(Some(weight_for::weight_for_reject_instruction::<T>() + weight_for_instruction_execution).into())
         }
 
         // TODO: Add add_offchain_auth
@@ -475,8 +539,10 @@ decl_module! {
         /// * `receipt_uid` - Receipt ID generated by the signer.
         /// * `signer` - Signer of the receipt.
         /// * `signed_data` - Signed receipt.
-        #[weight = 1_000_000]
-        pub fn authorize_with_receipts(origin, instruction_id: u64, receipt_details: Vec<ReceiptDetails<T::AccountId, T::OffChainSignature>>) -> DispatchResult {
+        #[weight = weight_for::weight_for_authorize_with_receipts::<T>(u32::try_from(receipt_details.len()).unwrap_or_default())
+            + weight_for::weight_for_transfer::<T>() // Maximum weight for `execute_instruction()`
+            ]
+        pub fn authorize_with_receipts(origin, instruction_id: u64, receipt_details: Vec<ReceiptDetails<T::AccountId, T::OffChainSignature>>) -> DispatchResultWithPostInfo {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
 
@@ -565,11 +631,9 @@ decl_module! {
             Self::deposit_event(RawEvent::InstructionAuthorized(did, instruction_id));
 
             // Execute instruction if conditions are met.
-            if auths_pending == 0 && instruction_details.settlement_type == SettlementType::SettleOnAuthorization {
-                Self::execute_instruction(instruction_id);
-            }
+            let execute_instruction_weight = Self::is_instruction_executed(auths_pending, instruction_details.settlement_type, instruction_id);
 
-            Ok(())
+            Ok(Some(weight_for::weight_for_authorize_with_receipts::<T>(u32::try_from(receipt_details.len()).unwrap_or_default()) + execute_instruction_weight).into())
         }
 
         /// Claims a signed receipt.
@@ -698,7 +762,12 @@ impl<T: Trait> Module<T> {
         settlement_type: SettlementType<T::BlockNumber>,
         valid_from: Option<T::Moment>,
         legs: Vec<Leg<T::Balance>>,
-    ) -> Result<u64, Error<T>> {
+    ) -> Result<u64, DispatchError> {
+        // Check whether the no. of legs within the limit or not.
+        ensure!(
+            u32::try_from(legs.len()).unwrap_or(0) <= T::MaxLegsInAInstruction::get(),
+            Error::<T>::LegsCountExceededMaxLimit
+        );
         // Check if a venue exists and the sender is the creator of the venue
         let mut venue = Self::venue_info(venue_id);
         ensure!(venue.creator == did, Error::<T>::Unauthorized);
@@ -781,6 +850,7 @@ impl<T: Trait> Module<T> {
     pub fn on_initialize(block_number: T::BlockNumber) -> Weight {
         let scheduled_instructions = <ScheduledInstructions<T>>::take(block_number);
         let mut legs_executed: u32 = 0;
+        let mut weight_for_initialize: Weight = 0;
         let max_legs = T::MaxScheduledInstructionLegsPerBlock::get();
 
         for (i, scheduled_tx) in scheduled_instructions.iter().enumerate() {
@@ -796,9 +866,12 @@ impl<T: Trait> Module<T> {
                 );
                 break;
             }
-            legs_executed += Self::execute_instruction(*scheduled_tx);
+            let (temp_legs_executed, temp_weight_for_initialize) =
+                Self::execute_instruction(*scheduled_tx);
+            legs_executed += temp_legs_executed;
+            weight_for_initialize += temp_weight_for_initialize;
         }
-        (10_000 * legs_executed).into()
+        weight_for_initialize
     }
 
     fn unsafe_unauthorize_instruction(did: IdentityId, instruction_id: u64) -> DispatchResult {
@@ -873,10 +946,10 @@ impl<T: Trait> Module<T> {
         Ok(())
     }
 
-    fn execute_instruction(instruction_id: u64) -> u32 {
+    fn execute_instruction(instruction_id: u64) -> (u32, Weight) {
         let legs = <InstructionLegs<T>>::iter_prefix(instruction_id).collect::<Vec<_>>();
         let instructions_processed: u32 = u32::try_from(legs.len()).unwrap_or_default();
-        if Self::instruction_auths_pending(instruction_id) > 0 {
+        let weight_for_execution = if Self::instruction_auths_pending(instruction_id) > 0 {
             // Instruction rejected. Unlock any locked tokens and mark receipts as unused.
             // NB: Leg status is not updated because Instruction related details are deleted after settlement in any case.
             Self::unchecked_release_locks(instruction_id, legs);
@@ -884,7 +957,9 @@ impl<T: Trait> Module<T> {
                 SettlementDID.as_id(),
                 instruction_id,
             ));
+            weight_for::weight_for_execute_instruction_if_auth_pending::<T>()
         } else {
+            let mut transaction_weight = 0;
             // All authorizations received, instruction should be settled.
             let mut failed = false;
             // Verify that the venue still has the required permissions for the tokens involved.
@@ -907,15 +982,18 @@ impl<T: Trait> Module<T> {
                         let status = Self::instruction_leg_status(instruction_id, leg_id);
                         status == LegStatus::ExecutionPending
                     }) {
-                        if T::Asset::unsafe_transfer_by_custodian(
+                        let result = T::Asset::unsafe_transfer_by_custodian(
                             SettlementDID.as_id(),
                             leg_details.asset,
                             leg_details.from,
                             leg_details.to,
                             leg_details.amount,
-                        )
-                        .is_err()
-                        {
+                        );
+                        transaction_weight = transaction_weight
+                            + result
+                                .map_or_else(|err| err.post_info.actual_weight, |p| p.actual_weight)
+                                .unwrap_or(0);
+                        if result.is_err() {
                             return Rollback(Err(leg_id));
                         }
                     }
@@ -941,7 +1019,8 @@ impl<T: Trait> Module<T> {
                     }
                 }
             }
-        }
+            weight_for::weight_for_execute_instruction_if_auth_no_pending::<T>(transaction_weight)
+        };
 
         // Clean up instruction details to reduce chain bloat
         <InstructionLegs<T>>::remove_prefix(instruction_id);
@@ -950,7 +1029,10 @@ impl<T: Trait> Module<T> {
         <InstructionAuthsPending>::remove(instruction_id);
         <AuthsReceived>::remove_prefix(instruction_id);
         // NB UserAuths mapping is not cleared
-        instructions_processed
+        (
+            instructions_processed,
+            weight_for_execution.saturating_add(T::DbWeight::get().writes(5)),
+        )
     }
 
     pub fn unsafe_authorize_instruction(did: IdentityId, instruction_id: u64) -> DispatchResult {
@@ -1085,5 +1167,19 @@ impl<T: Trait> Module<T> {
                 LegStatus::PendingTokenLock => {}
             }
         }
+    }
+
+    fn is_instruction_executed(
+        auths_pending: u64,
+        settlement_type: SettlementType<T::BlockNumber>,
+        id: u64,
+    ) -> Weight {
+        let execute_instruction_weight =
+            if auths_pending == 0 && settlement_type == SettlementType::SettleOnAuthorization {
+                Self::execute_instruction(id).1
+            } else {
+                Zero::zero()
+            };
+        execute_instruction_weight
     }
 }
