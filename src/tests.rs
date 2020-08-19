@@ -57,6 +57,7 @@ fn create_token(token_name: &[u8], ticker: Ticker, keyring: Public) {
         AssetType::default(),
         vec![],
         None,
+        None,
     ));
     assert_ok!(ComplianceManager::add_active_rule(
         Origin::signed(keyring),
