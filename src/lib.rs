@@ -274,6 +274,8 @@ pub mod weight_for {
                 (T::Asset::max_number_of_tm_extension() * T::MaxLegsInAInstruction::get()).into(),
             )
             .saturating_add(70_000_000) // Weight for compliance manager
+            .saturating_add(T::DbWeight::get().reads_writes(4, 5)) // Weight for read
+            .saturating_add(150_000_000)
     }
 }
 
