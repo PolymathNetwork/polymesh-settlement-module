@@ -58,7 +58,7 @@ fn create_token(token_name: &[u8], ticker: Ticker, keyring: Public) {
         vec![],
         None,
     ));
-    assert_ok!(ComplianceManager::add_active_rule(
+    assert_ok!(ComplianceManager::add_compliance_requirement(
         Origin::signed(keyring),
         ticker,
         vec![],
@@ -1045,7 +1045,7 @@ fn failed_execution() {
         let ticker2 = Ticker::try_from(&token_name2[..]).unwrap();
         let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
         init(token_name2, ticker2, AccountKeyring::Bob.public());
-        assert_ok!(ComplianceManager::reset_active_rules(
+        assert_ok!(ComplianceManager::reset_asset_compliance(
             Origin::signed(AccountKeyring::Bob.public()),
             ticker2,
         ));
