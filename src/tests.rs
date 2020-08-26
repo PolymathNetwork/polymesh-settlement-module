@@ -13,7 +13,7 @@ use pallet_settlement::{
     VenueType,
 };
 use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
-use polymesh_primitives::{Claim, IdentityId, Rule, RuleType, Ticker};
+use polymesh_primitives::{Claim, Condition, ConditionType, IdentityId, Ticker};
 
 use codec::Encode;
 use frame_support::dispatch::{GetDispatchInfo, PostDispatchInfo};
@@ -2014,32 +2014,32 @@ fn test_weights_for_settlement_transaction() {
             let ticker_id = Identity::get_token_did(&ticker).unwrap();
 
             // Remove existing rules
-            assert_ok!(ComplianceManager::remove_active_rule(
+            assert_ok!(ComplianceManager::remove_compliance_requirement(
                 alice_signed.clone(),
                 ticker,
                 1
             ));
             // Add claim rules for settlement
-            assert_ok!(ComplianceManager::add_active_rule(
+            assert_ok!(ComplianceManager::add_compliance_requirement(
                 alice_signed.clone(),
                 ticker,
                 vec![
-                    Rule {
-                        rule_type: RuleType::IsPresent(Claim::Accredited(ticker_id)),
+                    Condition {
+                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id)),
                         issuers: vec![eve_did]
                     },
-                    Rule {
-                        rule_type: RuleType::IsAbsent(Claim::BuyLockup(ticker_id)),
+                    Condition {
+                        condition_type: ConditionType::IsAbsent(Claim::BuyLockup(ticker_id)),
                         issuers: vec![eve_did]
                     }
                 ],
                 vec![
-                    Rule {
-                        rule_type: RuleType::IsPresent(Claim::Accredited(ticker_id)),
+                    Condition {
+                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id)),
                         issuers: vec![eve_did]
                     },
-                    Rule {
-                        rule_type: RuleType::IsAnyOf(vec![
+                    Condition {
+                        condition_type: ConditionType::IsAnyOf(vec![
                             Claim::BuyLockup(ticker_id),
                             Claim::KnowYourCustomer(ticker_id)
                         ]),
