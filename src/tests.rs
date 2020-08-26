@@ -1,5 +1,5 @@
 use super::{
-    storage::{register_keyring_account, TestStorage},
+    storage::{register_keyring_account, make_account_without_cdd, account_from, TestStorage},
     ExtBuilder,
 };
 
@@ -9,13 +9,14 @@ use pallet_compliance_manager as compliance_manager;
 use pallet_identity as identity;
 use pallet_settlement::{
     self as settlement, AuthorizationStatus, Instruction, InstructionStatus, Leg, LegStatus,
-    Receipt, ReceiptDetails, SettlementType, VenueDetails,
+    Receipt, ReceiptDetails, SettlementType, VenueDetails, weight_for, Call as SettlementCall
 };
 use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
-use polymesh_primitives::{IdentityId, Ticker};
+use polymesh_primitives::{IdentityId, Ticker, RuleType, Claim, Rule};
 
 use codec::Encode;
 use frame_support::{assert_noop, assert_ok};
+use frame_support::dispatch::{ GetDispatchInfo, PostDispatchInfo };
 use rand::{prelude::*, seq::SliceRandom, thread_rng};
 use sp_core::sr25519::Public;
 use sp_runtime::AnySignature;
@@ -35,6 +36,19 @@ type DidRecords = identity::DidRecords<TestStorage>;
 type Settlement = settlement::Module<TestStorage>;
 type System = frame_system::Module<TestStorage>;
 type Error = settlement::Error<TestStorage>;
+
+macro_rules! assert_add_claim {
+    ($signer:expr, $target:expr, $claim:expr) => {
+        assert_ok!(
+            Identity::add_claim(
+                $signer,
+                $target,
+                $claim,
+                None,
+            )
+        );
+    };
+}
 
 fn init(token_name: &[u8], ticker: Ticker, keyring: Public) -> u64 {
     create_token(token_name, ticker, keyring);
@@ -74,7 +88,9 @@ fn next_block() {
 
 #[test]
 fn venue_registration() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let venue_counter = Settlement::venue_counter();
@@ -105,7 +121,9 @@ fn venue_registration() {
 
 #[test]
 fn basic_settlement() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -157,7 +175,9 @@ fn basic_settlement() {
 
 #[test]
 fn overdraft_failure() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let _bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -195,7 +215,9 @@ fn overdraft_failure() {
 
 #[test]
 fn token_swap() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -449,7 +471,9 @@ fn token_swap() {
 
 #[test]
 fn claiming_receipt() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -812,7 +836,9 @@ fn claiming_receipt() {
 
 #[test]
 fn settle_on_block() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -1034,7 +1060,9 @@ fn settle_on_block() {
 
 #[test]
 fn failed_execution() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -1253,7 +1281,9 @@ fn failed_execution() {
 
 #[test]
 fn venue_filtering() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -1335,7 +1365,9 @@ fn venue_filtering() {
 
 #[test]
 fn basic_fuzzing() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -1576,7 +1608,9 @@ fn basic_fuzzing() {
 
 #[test]
 fn claim_multiple_receipts_during_authorization() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -1757,7 +1791,9 @@ fn claim_multiple_receipts_during_authorization() {
 
 #[test]
 fn overload_settle_on_block() {
-    ExtBuilder::default().build().execute_with(|| {
+    ExtBuilder::default()
+    .set_max_legs_allowed(500)
+    .build().execute_with(|| {
         let alice_signed = Origin::signed(AccountKeyring::Alice.public());
         let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
         let bob_signed = Origin::signed(AccountKeyring::Bob.public());
@@ -1931,5 +1967,114 @@ fn encode_receipt() {
             amount: 100u128,
         };
         println!("{:?}", AccountKeyring::Alice.sign(&msg1.encode()));
+    });
+}
+
+#[test]
+fn test_weights_for_settlement_transaction() {
+    ExtBuilder::default()
+    .set_max_legs_allowed(5) // set maximum no. of legs allowed for an instruction.
+    .set_max_tms_allowed(4) // set maximum no. of tms an asset can have.
+    .build().execute_with(|| {
+        let alice = AccountKeyring::Alice.public();
+        let (alice_signed, alice_did) = make_account_without_cdd(alice).unwrap();
+
+        let bob = AccountKeyring::Bob.public();
+        let (bob_signed, bob_did) = make_account_without_cdd(bob).unwrap();
+
+        let eve = AccountKeyring::Eve.public();
+        let (eve_signed, eve_did) = make_account_without_cdd(eve).unwrap();
+
+        let token_name = b"ACME";
+        let ticker = Ticker::try_from(&token_name[..]).unwrap();
+
+        let venue_counter = init(token_name, ticker, alice);
+        let instruction_counter = Settlement::instruction_counter();
+
+        // Get token Id.
+        let ticker_id = Identity::get_token_did(&ticker).unwrap();
+
+        // Remove existing rules
+        assert_ok!(ComplianceManager::remove_active_rule(alice_signed.clone(),ticker,1));
+        // Add claim rules for settlement
+        assert_ok!(ComplianceManager::add_active_rule(
+            alice_signed.clone(),
+            ticker,
+            vec![
+                Rule {
+                    rule_type: RuleType::IsPresent(Claim::Accredited(ticker_id)),
+                    issuers: vec![eve_did]
+                },
+                Rule {
+                    rule_type: RuleType::IsAbsent(Claim::BuyLockup(ticker_id)),
+                    issuers: vec![eve_did]
+                }
+            ],
+            vec![
+                Rule {
+                    rule_type: RuleType::IsPresent(Claim::Accredited(ticker_id)),
+                    issuers: vec![eve_did]
+                },
+                Rule {
+                    rule_type: RuleType::IsAnyOf(vec![Claim::BuyLockup(ticker_id), Claim::KnowYourCustomer(ticker_id)]),
+                    issuers: vec![eve_did]
+                }
+            ]
+        ));
+
+        // Providing claim to sender and receiver
+        // For Alice
+        assert_add_claim!(eve_signed.clone(), alice_did, Claim::Accredited(ticker_id));
+        // For Bob
+        assert_add_claim!(eve_signed.clone(), bob_did, Claim::Accredited(ticker_id));
+        assert_add_claim!(eve_signed.clone(), bob_did, Claim::KnowYourCustomer(ticker_id));
+
+        // Create instruction
+        let legs = vec![
+            Leg {
+                from: alice_did,
+                to: bob_did,
+                asset: ticker,
+                amount: 100u128,
+            }
+        ];
+
+        let weight_to_add_instruction = SettlementCall::<TestStorage>::add_instruction(
+            venue_counter,
+            SettlementType::SettleOnAuthorization,
+            None,
+            legs.clone()
+        ).get_dispatch_info().weight;
+
+        assert_ok!(Settlement::add_instruction(
+            alice_signed.clone(),
+            venue_counter,
+            SettlementType::SettleOnAuthorization,
+            None,
+            legs.clone()
+        ));
+
+        assert_eq!(weight_to_add_instruction, 950_000_000 + 1_000_000 * u64::try_from(legs.len()).unwrap());
+
+        // Authorize instruction by Alice first and check for weight.
+        let weight_for_authorize_instruction_1 = SettlementCall::<TestStorage>::authorize_instruction(instruction_counter).get_dispatch_info().weight;
+        let result_authorize_instruction_1 = Settlement::authorize_instruction(
+            alice_signed.clone(),
+            instruction_counter,
+        );
+        assert_ok!(result_authorize_instruction_1);
+        assert_eq!(weight_for::weight_for_authorize_instruction::<TestStorage>(), weight_for_authorize_instruction_1 - weight_for::weight_for_transfer::<TestStorage>());
+
+        let weight_for_authorize_instruction_2 = SettlementCall::<TestStorage>::authorize_instruction(instruction_counter).get_dispatch_info().weight;
+        let result_authorize_instruction_2 = Settlement::authorize_instruction(
+            bob_signed.clone(),
+            instruction_counter,
+        );
+        assert_ok!(result_authorize_instruction_2);
+        assert_eq!(Asset::balance_of(ticker, bob_did), 100);
+        let acutal_weight = result_authorize_instruction_2.unwrap().actual_weight.unwrap();
+        let (transfer_result, weight_for_is_valid_transfer) = Asset::_is_valid_transfer(&ticker, alice, Some(alice_did), Some(bob_did), 100).unwrap();
+        assert_eq!(transfer_result, 81);
+        assert!(weight_for_authorize_instruction_2 > acutal_weight);
     });
 }
