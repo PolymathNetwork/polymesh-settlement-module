@@ -10,6 +10,7 @@ use pallet_identity as identity;
 use pallet_settlement::{
     self as settlement, weight_for, AuthorizationStatus, Call as SettlementCall, Instruction,
     InstructionStatus, Leg, LegStatus, Receipt, ReceiptDetails, SettlementType, VenueDetails,
+    VenueType,
 };
 use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
 use polymesh_primitives::{Claim, IdentityId, Rule, RuleType, Ticker};
@@ -49,7 +50,8 @@ fn init(token_name: &[u8], ticker: Ticker, keyring: Public) -> u64 {
     assert_ok!(Settlement::create_venue(
         Origin::signed(keyring),
         VenueDetails::default(),
-        vec![keyring]
+        vec![keyring],
+        VenueType::Other
     ));
     venue_counter
 }
@@ -91,13 +93,15 @@ fn venue_registration() {
             assert_ok!(Settlement::create_venue(
                 alice_signed,
                 VenueDetails::default(),
-                vec![AccountKeyring::Alice.public(), AccountKeyring::Bob.public()]
+                vec![AccountKeyring::Alice.public(), AccountKeyring::Bob.public()],
+                VenueType::Exchange
             ));
             let venue_info = Settlement::venue_info(venue_counter);
             assert_eq!(Settlement::venue_counter(), venue_counter + 1);
             assert_eq!(venue_info.creator, alice_did);
             assert_eq!(venue_info.instructions.len(), 0);
             assert_eq!(venue_info.details, VenueDetails::default());
+            assert_eq!(venue_info.venue_type, VenueType::Exchange);
             assert_eq!(
                 Settlement::venue_signers(venue_counter, AccountKeyring::Alice.public()),
                 true
@@ -1386,7 +1390,8 @@ fn basic_fuzzing() {
             assert_ok!(Settlement::create_venue(
                 Origin::signed(AccountKeyring::Alice.public()),
                 VenueDetails::default(),
-                vec![AccountKeyring::Alice.public()]
+                vec![AccountKeyring::Alice.public()],
+                VenueType::Other
             ));
             let mut tickers = Vec::with_capacity(40);
             let mut balances = HashMap::with_capacity(320);
