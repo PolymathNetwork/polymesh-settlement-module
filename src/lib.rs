@@ -97,6 +97,25 @@ impl Default for InstructionStatus {
     }
 }
 
+/// Type of the venue. Used for offchain filtering.
+#[derive(Encode, Decode, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VenueType {
+    /// Default type - used for mixed and unknown types
+    Other,
+    /// Represents a primary distribution
+    Distribution,
+    /// Represents an offering/fund raiser
+    Sto,
+    /// Represents a match making service
+    Exchange,
+}
+
+impl Default for VenueType {
+    fn default() -> Self {
+        Self::Other
+    }
+}
+
 /// Status of a leg
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LegStatus<AccountId> {
@@ -185,16 +204,30 @@ pub struct Venue {
     pub creator: IdentityId,
     /// instructions under this venue (Only needed for the UI)
     pub instructions: Vec<u64>,
-    /// Additional details about this venue
+    /// Additional details about this venue (Only needed for the UI)
+    pub details: VenueDetails,
+    /// Specifies type of the venue (Only needed for the UI)
+    pub venue_type: VenueType,
+}
+
+/// Old venue details format. Used only for storage migration.
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, PartialOrd, Ord)]
+pub struct OldVenue {
+    /// Identity of the venue's creator
+    pub creator: IdentityId,
+    /// instructions under this venue (Only needed for the UI)
+    pub instructions: Vec<u64>,
+    /// Additional details about this venue (Only needed for the UI)
     pub details: VenueDetails,
 }
 
 impl Venue {
-    pub fn new(creator: IdentityId, details: VenueDetails) -> Self {
+    pub fn new(creator: IdentityId, details: VenueDetails, venue_type: VenueType) -> Self {
         Self {
             creator,
             instructions: Vec::new(),
             details,
+            venue_type,
         }
     }
 }
@@ -412,6 +445,19 @@ decl_module! {
 
         const MaxLegsInAInstruction: u32 = T::MaxLegsInAInstruction::get();
 
+        fn on_runtime_upgrade() -> Weight {
+            use frame_support::migration::{StorageIterator, put_storage_value};
+            for (key, old_venue) in StorageIterator::<OldVenue>::new(b"Settlement", b"VenueInfo").drain() {
+                put_storage_value(b"Settlement", b"VenueInfo", &key, Venue {
+                    creator: old_venue.creator,
+                    instructions: old_venue.instructions,
+                    details: old_venue.details,
+                    venue_type: VenueType::Other
+                });
+            }
+            1_000
+        }
+
         /// Registers a new venue.
         ///
         /// * `details` - Extra details about a venue
@@ -420,10 +466,10 @@ decl_module! {
         /// # Weight
         /// `200_000_000 + 5_000_000 * signers.len()`
         #[weight = 200_000_000 + 5_000_000 * u64::try_from(signers.len()).unwrap_or_default()]
-        pub fn create_venue(origin, details: VenueDetails, signers: Vec<T::AccountId>) -> DispatchResult {
+        pub fn create_venue(origin, details: VenueDetails, signers: Vec<T::AccountId>, venue_type: VenueType) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
-            let venue = Venue::new(did, details);
+            let venue = Venue::new(did, details, venue_type);
             // NB: Venue counter starts with 1.
             let venue_counter = Self::venue_counter();
             <VenueInfo>::insert(venue_counter, venue);
