@@ -310,6 +310,12 @@ pub mod weight_for {
             .saturating_add(T::DbWeight::get().reads_writes(4, 5)) // Weight for read
             .saturating_add(150_000_000)
     }
+
+    pub fn weight_for_instruction_creation<T: Trait>(no_of_legs: usize) -> Weight {
+        T::DbWeight::get()
+            .reads_writes(2, 5)
+            .saturating_add(u64::try_from(no_of_legs * 50_000_000).unwrap_or_default())
+    }
 }
 
 decl_event!(
@@ -492,7 +498,7 @@ decl_module! {
         ///
         /// # Weight
         /// `950_000_000 + 1_000_000 * legs.len()`
-        #[weight = 950_000_000 + 1_000_000 * u64::try_from(legs.len()).unwrap_or_default()]
+        #[weight = weight_for::weight_for_instruction_creation::<T>(legs.len())]
         pub fn add_instruction(
             origin,
             venue_id: u64,
@@ -504,6 +510,38 @@ decl_module! {
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
             Self::base_add_instruction(did, venue_id, settlement_type, valid_from, legs)?;
             Ok(())
+        }
+
+        /// Adds and authorizes a new instruction.
+        ///
+        /// # Arguments
+        /// * `venue_id` - ID of the venue this instruction belongs to.
+        /// * `settlement_type` - Defines if the instruction should be settled
+        ///    immediately after receiving all auths or waiting till a specific block.
+        /// * `valid_from` - Optional date from which people can interact with this instruction.
+        /// * `legs` - Legs included in this instruction.
+        #[weight = weight_for::weight_for_instruction_creation::<T>(legs.len())
+            + weight_for::weight_for_authorize_instruction::<T>()
+            + weight_for::weight_for_transfer::<T>()
+        ]
+        pub fn add_and_authorize_instruction(
+            origin,
+            venue_id: u64,
+            settlement_type: SettlementType<T::BlockNumber>,
+            valid_from: Option<T::Moment>,
+            legs: Vec<Leg<T::Balance>>
+        ) -> DispatchResultWithPostInfo {
+            let sender = ensure_signed(origin.clone())?;
+            let did = Context::current_identity_or::<Identity<T>>(&sender)?;
+            let legs_count = legs.len();
+            let instruction_id = Self::base_add_instruction(did, venue_id, settlement_type, valid_from, legs)?;
+            let authorization_weight = Self::authorize_instruction(origin, instruction_id)?;
+            Ok(
+                Some(
+                    weight_for::weight_for_instruction_creation::<T>(legs_count)
+                        .saturating_add(authorization_weight.actual_weight.unwrap_or_default())
+                ).into()
+            )
         }
 
         /// Authorizes an existing instruction.
