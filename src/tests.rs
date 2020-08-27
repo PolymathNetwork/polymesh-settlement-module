@@ -1,5 +1,5 @@
 use super::{
-    storage::{account_from, make_account_without_cdd, register_keyring_account, TestStorage},
+    storage::{make_account_without_cdd, register_keyring_account, TestStorage},
     ExtBuilder,
 };
 
@@ -16,7 +16,7 @@ use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
 use polymesh_primitives::{Claim, Condition, ConditionType, IdentityId, Ticker};
 
 use codec::Encode;
-use frame_support::dispatch::{GetDispatchInfo, PostDispatchInfo};
+use frame_support::dispatch::GetDispatchInfo;
 use frame_support::{assert_noop, assert_ok};
 use rand::{prelude::*, seq::SliceRandom, thread_rng};
 use sp_core::sr25519::Public;
@@ -155,6 +155,65 @@ fn basic_settlement() {
 
             assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
             assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
+            assert_ok!(Settlement::authorize_instruction(
+                bob_signed.clone(),
+                instruction_counter,
+            ));
+
+            // Instruction should've settled
+            assert_eq!(
+                Asset::balance_of(&ticker, alice_did),
+                alice_init_balance - amount
+            );
+            assert_eq!(
+                Asset::balance_of(&ticker, bob_did),
+                bob_init_balance + amount
+            );
+        });
+}
+
+#[test]
+fn create_and_authorize_instruction() {
+    ExtBuilder::default()
+        .set_max_legs_allowed(500)
+        .build()
+        .execute_with(|| {
+            let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+            let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+            let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+            let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
+            let token_name = b"ACME";
+            let ticker = Ticker::try_from(&token_name[..]).unwrap();
+            let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
+            let instruction_counter = Settlement::instruction_counter();
+            let alice_init_balance = Asset::balance_of(&ticker, alice_did);
+            let bob_init_balance = Asset::balance_of(&ticker, bob_did);
+            let amount = 100u128;
+            assert_ok!(Settlement::add_and_authorize_instruction(
+                alice_signed.clone(),
+                venue_counter,
+                SettlementType::SettleOnAuthorization,
+                None,
+                vec![Leg {
+                    from: alice_did,
+                    to: bob_did,
+                    asset: ticker,
+                    amount: amount
+                }]
+            ));
+
+            assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
+            assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
+
+            assert_eq!(
+                Settlement::user_auths(alice_did, instruction_counter),
+                AuthorizationStatus::Authorized
+            );
+            assert_eq!(
+                Settlement::user_auths(bob_did, instruction_counter),
+                AuthorizationStatus::Pending
+            );
+
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
@@ -1336,7 +1395,7 @@ fn venue_filtering() {
                 ticker,
                 vec![venue_counter]
             ));
-            assert_ok!(Settlement::add_instruction(
+            assert_ok!(Settlement::add_and_authorize_instruction(
                 alice_signed.clone(),
                 venue_counter,
                 SettlementType::SettleOnBlock(block_number + 1),
@@ -1346,10 +1405,6 @@ fn venue_filtering() {
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-            ));
-            assert_ok!(Settlement::authorize_instruction(
-                alice_signed.clone(),
-                instruction_counter + 1,
             ));
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
@@ -2086,7 +2141,7 @@ fn test_weights_for_settlement_transaction() {
 
             assert_eq!(
                 weight_to_add_instruction,
-                950_000_000 + 1_000_000 * u64::try_from(legs.len()).unwrap()
+                weight_for::weight_for_instruction_creation::<TestStorage>(legs.len())
             );
 
             // Authorize instruction by Alice first and check for weight.
@@ -2115,7 +2170,7 @@ fn test_weights_for_settlement_transaction() {
                 .unwrap()
                 .actual_weight
                 .unwrap();
-            let (transfer_result, weight_for_is_valid_transfer) =
+            let (transfer_result, _weight_for_is_valid_transfer) =
                 Asset::_is_valid_transfer(&ticker, alice, Some(alice_did), Some(bob_did), 100)
                     .unwrap();
             assert_eq!(transfer_result, 81);
