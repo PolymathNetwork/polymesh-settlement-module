@@ -678,31 +678,31 @@ decl_module! {
             }
 
             // Lock tokens that do not have a receipt attached to their leg.
-            with_transaction(|| {
-                let legs = <InstructionLegs<T>>::iter_prefix(instruction_id);
-                for (leg_id, leg_details) in legs.filter(|(_leg_id, leg_details)| leg_details.from == did ) {
-                    // Receipt for the leg was provided
-                    if let Some(receipt) = receipt_details.iter().find(|receipt| receipt.leg_id == leg_id) {
-                        <InstructionLegStatus<T>>::insert(
-                            instruction_id,
-                            leg_id,
-                            LegStatus::ExecutionToBeSkipped(receipt.signer.clone(), receipt.receipt_uid)
-                        );
-                    } else {
-                        match T::Asset::unsafe_increase_custody_allowance(
-                            did,
-                            leg_details.asset,
-                            did,
-                            SettlementDID.as_id(),
-                            leg_details.amount
-                        ) {
-                            Ok(_) => <InstructionLegStatus<T>>::insert(instruction_id, leg_id, LegStatus::ExecutionPending),
-                            Err(_) => return Rollback(Err(Error::<T>::FailedToTakeCustodialOwnership))
-                        }
-                    }
-                }
-                Commit(Ok(()))
-            })?;
+            // with_transaction(|| {
+            //     let legs = <InstructionLegs<T>>::iter_prefix(instruction_id);
+            //     for (leg_id, leg_details) in legs.filter(|(_leg_id, leg_details)| leg_details.from == did ) {
+            //         // Receipt for the leg was provided
+            //         if let Some(receipt) = receipt_details.iter().find(|receipt| receipt.leg_id == leg_id) {
+            //             <InstructionLegStatus<T>>::insert(
+            //                 instruction_id,
+            //                 leg_id,
+            //                 LegStatus::ExecutionToBeSkipped(receipt.signer.clone(), receipt.receipt_uid)
+            //             );
+            //         } else {
+            //             match T::Asset::unsafe_increase_custody_allowance(
+            //                 did,
+            //                 leg_details.asset,
+            //                 did,
+            //                 SettlementDID.as_id(),
+            //                 leg_details.amount
+            //             ) {
+            //                 Ok(_) => <InstructionLegStatus<T>>::insert(instruction_id, leg_id, LegStatus::ExecutionPending),
+            //                 Err(_) => return Rollback(Err(Error::<T>::FailedToTakeCustodialOwnership))
+            //             }
+            //         }
+            //     }
+            //     Commit(Ok(()))
+            // })?;
 
             // Update storage
             let auths_pending = Self::instruction_auths_pending(instruction_id).saturating_sub(1);
@@ -761,13 +761,13 @@ decl_module! {
                 let leg = Self::instruction_legs(instruction_id, leg_id);
                 ensure!(leg.from == did, Error::<T>::Unauthorized);
                 // Lock tokens that are part of the leg
-                T::Asset::unsafe_increase_custody_allowance(
-                    did,
-                    leg.asset,
-                    did,
-                    SettlementDID.as_id(),
-                    leg.amount
-                )?;
+                // T::Asset::unsafe_increase_custody_allowance(
+                //     did,
+                //     leg.asset,
+                //     did,
+                //     SettlementDID.as_id(),
+                //     leg.amount
+                // )?;
                 <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
                 <InstructionLegStatus<T>>::insert(instruction_id, leg_id, LegStatus::ExecutionPending);
                 Self::deposit_event(RawEvent::ReceiptUnclaimed(did, instruction_id, leg_id, receipt_uid, signer));
@@ -983,13 +983,13 @@ impl<T: Trait> Module<T> {
                 }
                 LegStatus::ExecutionPending => {
                     // Tokens are unlocked
-                    T::Asset::unsafe_decrease_custody_allowance(
-                        did,
-                        leg_details.asset,
-                        did,
-                        SettlementDID.as_id(),
-                        leg_details.amount,
-                    );
+                    // T::Asset::unsafe_decrease_custody_allowance(
+                    //     did,
+                    //     leg_details.asset,
+                    //     did,
+                    //     SettlementDID.as_id(),
+                    //     leg_details.amount,
+                    // );
                     <InstructionLegStatus<T>>::insert(
                         instruction_id,
                         leg_id,
@@ -1063,47 +1063,47 @@ impl<T: Trait> Module<T> {
             }
 
             if !failed {
-                match with_transaction(|| {
-                    for (leg_id, leg_details) in legs.iter().filter(|(leg_id, _)| {
-                        let status = Self::instruction_leg_status(instruction_id, leg_id);
-                        status == LegStatus::ExecutionPending
-                    }) {
-                        let result = T::Asset::unsafe_transfer_by_custodian(
-                            SettlementDID.as_id(),
-                            leg_details.asset,
-                            leg_details.from,
-                            leg_details.to,
-                            leg_details.amount,
-                        );
-                        transaction_weight = transaction_weight
-                            + result
-                                .map_or_else(|err| err.post_info.actual_weight, |p| p.actual_weight)
-                                .unwrap_or(0);
-                        if result.is_err() {
-                            return Rollback(Err(leg_id));
-                        }
-                    }
-                    Commit(Ok(()))
-                }) {
-                    Ok(_) => {
-                        Self::deposit_event(RawEvent::InstructionExecuted(
-                            SettlementDID.as_id(),
-                            instruction_id,
-                        ));
-                    }
-                    Err(leg_id) => {
-                        Self::deposit_event(RawEvent::LegFailedExecution(
-                            SettlementDID.as_id(),
-                            instruction_id,
-                            leg_id.clone(),
-                        ));
-                        Self::deposit_event(RawEvent::InstructionFailed(
-                            SettlementDID.as_id(),
-                            instruction_id,
-                        ));
-                        Self::unchecked_release_locks(instruction_id, legs);
-                    }
-                }
+                // match with_transaction(|| {
+                //     for (leg_id, leg_details) in legs.iter().filter(|(leg_id, _)| {
+                //         let status = Self::instruction_leg_status(instruction_id, leg_id);
+                //         status == LegStatus::ExecutionPending
+                //     }) {
+                //         let result = T::Asset::unsafe_transfer_by_custodian(
+                //             SettlementDID.as_id(),
+                //             leg_details.asset,
+                //             leg_details.from,
+                //             leg_details.to,
+                //             leg_details.amount,
+                //         );
+                //         transaction_weight = transaction_weight
+                //             + result
+                //                 .map_or_else(|err| err.post_info.actual_weight, |p| p.actual_weight)
+                //                 .unwrap_or(0);
+                //         if result.is_err() {
+                //             return Rollback(Err(leg_id));
+                //         }
+                //     }
+                //     Commit(Ok(()))
+                // }) {
+                //     Ok(_) => {
+                //         Self::deposit_event(RawEvent::InstructionExecuted(
+                //             SettlementDID.as_id(),
+                //             instruction_id,
+                //         ));
+                //     }
+                //     Err(leg_id) => {
+                //         Self::deposit_event(RawEvent::LegFailedExecution(
+                //             SettlementDID.as_id(),
+                //             instruction_id,
+                //             leg_id.clone(),
+                //         ));
+                //         Self::deposit_event(RawEvent::InstructionFailed(
+                //             SettlementDID.as_id(),
+                //             instruction_id,
+                //         ));
+                //         Self::unchecked_release_locks(instruction_id, legs);
+                //     }
+                // }
             }
             weight_for::weight_for_execute_instruction_if_auth_no_pending::<T>(transaction_weight)
         };
@@ -1131,28 +1131,28 @@ impl<T: Trait> Module<T> {
             Error::<T>::NoPendingAuth
         );
 
-        with_transaction(|| {
-            let legs = <InstructionLegs<T>>::iter_prefix(instruction_id);
-            for (leg_id, leg_details) in
-                legs.filter(|(_leg_id, leg_details)| leg_details.from == did)
-            {
-                match T::Asset::unsafe_increase_custody_allowance(
-                    did,
-                    leg_details.asset,
-                    did,
-                    SettlementDID.as_id(),
-                    leg_details.amount,
-                ) {
-                    Ok(_) => <InstructionLegStatus<T>>::insert(
-                        instruction_id,
-                        leg_id,
-                        LegStatus::ExecutionPending,
-                    ),
-                    Err(_) => return Rollback(Err(Error::<T>::FailedToTakeCustodialOwnership)),
-                }
-            }
-            Commit(Ok(()))
-        })?;
+        // with_transaction(|| {
+        //     let legs = <InstructionLegs<T>>::iter_prefix(instruction_id);
+        //     for (leg_id, leg_details) in
+        //         legs.filter(|(_leg_id, leg_details)| leg_details.from == did)
+        //     {
+        //         match T::Asset::unsafe_increase_custody_allowance(
+        //             did,
+        //             leg_details.asset,
+        //             did,
+        //             SettlementDID.as_id(),
+        //             leg_details.amount,
+        //         ) {
+        //             Ok(_) => <InstructionLegStatus<T>>::insert(
+        //                 instruction_id,
+        //                 leg_id,
+        //                 LegStatus::ExecutionPending,
+        //             ),
+        //             Err(_) => return Rollback(Err(Error::<T>::FailedToTakeCustodialOwnership)),
+        //         }
+        //     }
+        //     Commit(Ok(()))
+        // })?;
 
         let auths_pending = Self::instruction_auths_pending(instruction_id);
 
@@ -1205,13 +1205,13 @@ impl<T: Trait> Module<T> {
             Error::<T>::InvalidSignature
         );
 
-        T::Asset::unsafe_decrease_custody_allowance(
-            did,
-            leg.asset,
-            did,
-            SettlementDID.as_id(),
-            leg.amount,
-        );
+        // T::Asset::unsafe_decrease_custody_allowance(
+        //     did,
+        //     leg.asset,
+        //     did,
+        //     SettlementDID.as_id(),
+        //     leg.amount,
+        // );
 
         <ReceiptsUsed<T>>::insert(&signer, receipt_uid, true);
 
@@ -1243,14 +1243,14 @@ impl<T: Trait> Module<T> {
                         signer,
                     ));
                 }
-                LegStatus::ExecutionPending => T::Asset::unsafe_decrease_custody_allowance(
-                    SettlementDID.as_id(),
-                    leg_details.asset,
-                    leg_details.from,
-                    SettlementDID.as_id(),
-                    leg_details.amount,
-                ),
-                LegStatus::PendingTokenLock => {}
+                // LegStatus::ExecutionPending => T::Asset::unsafe_decrease_custody_allowance(
+                //     SettlementDID.as_id(),
+                //     leg_details.asset,
+                //     leg_details.from,
+                //     SettlementDID.as_id(),
+                //     leg_details.amount,
+                // ),
+                _ /*LegStatus::PendingTokenLock*/ => {}
             }
         }
     }
