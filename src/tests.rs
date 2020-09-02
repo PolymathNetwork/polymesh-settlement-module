@@ -2102,9 +2102,17 @@ fn test_weights_for_settlement_transaction() {
 
             // Providing claim to sender and receiver
             // For Alice
-            assert_add_claim!(eve_signed.clone(), alice_did, Claim::Accredited(ticker.into()));
+            assert_add_claim!(
+                eve_signed.clone(),
+                alice_did,
+                Claim::Accredited(ticker.into())
+            );
             // For Bob
-            assert_add_claim!(eve_signed.clone(), bob_did, Claim::Accredited(ticker.into()));
+            assert_add_claim!(
+                eve_signed.clone(),
+                bob_did,
+                Claim::Accredited(ticker.into())
+            );
             assert_add_claim!(
                 eve_signed.clone(),
                 bob_did,
