@@ -141,7 +141,7 @@ fn basic_settlement() {
             let eve = AccountKeyring::Eve.public();
 
             // Provide scope claim to sender and receiver of the transaction.
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
 
             assert_ok!(Settlement::add_instruction(
                 alice_signed.clone(),
@@ -202,7 +202,7 @@ fn create_and_authorize_instruction() {
             let eve = AccountKeyring::Eve.public();
 
             // Provide scope claim to both the parties of the transaction.
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
 
             assert_ok!(Settlement::add_and_authorize_instruction(
                 alice_signed.clone(),
@@ -382,8 +382,8 @@ fn token_swap() {
             assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
 
             // Provide scope claim to parties involved in a instruction.
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker, eve);
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker2, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker2, eve);
 
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
@@ -576,8 +576,8 @@ fn claiming_receipt() {
             let bob_init_balance2 = Asset::balance_of(&ticker2, bob_did);
 
             // Provide scope claims to multiple parties of a transactions.
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker, eve);
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker2, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker2, eve);
 
             let amount = 100u128;
             let legs = vec![
@@ -1026,8 +1026,8 @@ fn settle_on_block() {
             assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
 
             // Before authorization need to provide the scope claim for both the parties of a transaction.
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker, eve);
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker2, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker2, eve);
 
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
@@ -1397,7 +1397,7 @@ fn venue_filtering() {
             let eve = AccountKeyring::Eve.public();
 
             // provide scope claim.
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
 
             let legs = vec![Leg {
                 from: alice_did,
@@ -1580,7 +1580,7 @@ fn basic_fuzzing() {
                             }
                             // Provide scope claim for all the dids
                             provide_scope_claim_to_multiple_parties(
-                                vec![dids[j], dids[k]],
+                                &[dids[j], dids[k]],
                                 tickers[i * 4 + j],
                                 eve,
                             );
@@ -1937,7 +1937,7 @@ fn overload_settle_on_block() {
             ];
 
             // Provide scope claim to multiple parties of the transaction.
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
 
             for _ in 0..2 {
                 assert_ok!(Settlement::add_instruction(
@@ -2167,7 +2167,7 @@ fn test_weights_for_settlement_transaction() {
             );
 
             // Provide scope claim as well to pass through the transaction.
-            provide_scope_claim_to_multiple_parties(vec![alice_did, bob_did], ticker, dave);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, dave);
 
             // Create instruction
             let legs = vec![Leg {
