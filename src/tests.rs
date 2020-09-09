@@ -92,13 +92,14 @@ fn venue_registration() {
             let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
             let venue_counter = Settlement::venue_counter();
             assert_ok!(Settlement::create_venue(
-                alice_signed,
+                alice_signed.clone(),
                 VenueDetails::default(),
                 vec![AccountKeyring::Alice.public(), AccountKeyring::Bob.public()],
                 VenueType::Exchange
             ));
             let venue_info = Settlement::venue_info(venue_counter);
             assert_eq!(Settlement::venue_counter(), venue_counter + 1);
+            assert_eq!(Settlement::user_venues(alice_did), [venue_counter]);
             assert_eq!(venue_info.creator, alice_did);
             assert_eq!(venue_info.instructions.len(), 0);
             assert_eq!(venue_info.details, VenueDetails::default());
@@ -115,6 +116,31 @@ fn venue_registration() {
                 Settlement::venue_signers(venue_counter, AccountKeyring::Charlie.public()),
                 false
             );
+
+            // Creating a second venue
+            assert_ok!(Settlement::create_venue(
+                alice_signed.clone(),
+                VenueDetails::default(),
+                vec![AccountKeyring::Alice.public(), AccountKeyring::Bob.public()],
+                VenueType::Exchange
+            ));
+            assert_eq!(
+                Settlement::user_venues(alice_did),
+                [venue_counter, venue_counter + 1]
+            );
+
+            // Editing venue details
+            assert_ok!(Settlement::edit_venue(
+                alice_signed,
+                venue_counter,
+                Some([0x01].into()),
+                None
+            ));
+            let venue_info = Settlement::venue_info(venue_counter);
+            assert_eq!(venue_info.creator, alice_did);
+            assert_eq!(venue_info.instructions.len(), 0);
+            assert_eq!(venue_info.details, [0x01].into());
+            assert_eq!(venue_info.venue_type, VenueType::Exchange);
         });
 }
 

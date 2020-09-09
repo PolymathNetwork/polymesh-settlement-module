@@ -326,8 +326,10 @@ decl_event!(
         BlockNumber = <T as frame_system::Trait>::BlockNumber,
         AccountId = <T as frame_system::Trait>::AccountId,
     {
-        /// A new venue has been created (did, venue_id)
-        VenueCreated(IdentityId, u64),
+        /// A new venue has been created (did, venue_id, details, type)
+        VenueCreated(IdentityId, u64, VenueDetails, VenueType),
+        /// Am existing venue has been updated (did, venue_id, details, type)
+        VenueUpdated(IdentityId, u64, VenueDetails, VenueType),
         /// A new instruction has been created
         /// (did, venue_id, instruction_id, settlement_type, valid_from, legs)
         InstructionCreated(
@@ -413,6 +415,8 @@ decl_storage! {
         VenueInfo get(fn venue_info): map hasher(twox_64_concat) u64 => Venue;
         /// Signers authorized by the venue. (venue_id, signer) -> authorized_bool
         VenueSigners get(fn venue_signers): double_map hasher(twox_64_concat) u64, hasher(twox_64_concat) T::AccountId => bool;
+        /// Array of venues created by an identity. Only needed for the UI. IdentityId -> Vec<venue_id>
+        UserVenues get(fn user_venues): map hasher(twox_64_concat) IdentityId => Vec<u64>;
         /// Details about an instruction. instruction_id -> instruction_details
         InstructionDetails get(fn instruction_details): map hasher(twox_64_concat) u64 => Instruction<T::Moment, T::BlockNumber>;
         /// Legs under an instruction. (instruction_id, leg_id) -> Leg
@@ -470,6 +474,7 @@ decl_module! {
         ///
         /// * `details` - Extra details about a venue
         /// * `signers` - Array of signers that are allowed to sign receipts for this venue
+        /// * `venue_type` - Type of venue being created
         ///
         /// # Weight
         /// `200_000_000 + 5_000_000 * signers.len()`
@@ -480,12 +485,40 @@ decl_module! {
             let venue = Venue::new(did, details, venue_type);
             // NB: Venue counter starts with 1.
             let venue_counter = Self::venue_counter();
-            <VenueInfo>::insert(venue_counter, venue);
+            <VenueInfo>::insert(venue_counter, venue.clone());
             for signer in signers {
                 <VenueSigners<T>>::insert(venue_counter, signer, true);
             }
             <VenueCounter>::put(venue_counter + 1);
-            Self::deposit_event(RawEvent::VenueCreated(did, venue_counter));
+            <UserVenues>::append(did, venue_counter);
+            Self::deposit_event(RawEvent::VenueCreated(did, venue_counter, venue.details, venue.venue_type));
+            Ok(())
+        }
+
+        /// Edit venue details and types.
+        /// Both parameters are optional, they will be updated only if Some(value) is provided
+        ///
+        /// * `venue_id` - ID of the venue to edit
+        /// * `details` - Extra details about a venue
+        /// * `type` - Type of venue being created
+        ///
+        /// # Weight
+        /// `200_000_000
+        #[weight = 200_000_000]
+        pub fn edit_venue(origin, venue_id: u64, details: Option<VenueDetails>, venue_type: Option<VenueType>) -> DispatchResult {
+            let sender = ensure_signed(origin)?;
+            let did = Context::current_identity_or::<Identity<T>>(&sender)?;
+            // Check if a venue exists and the sender is the creator of the venue
+            let mut venue = Self::venue_info(venue_id);
+            ensure!(venue.creator == did, Error::<T>::Unauthorized);
+            if let Some(venue_details) = details {
+                venue.details = venue_details;
+            }
+            if let Some(v_type) = venue_type {
+                venue.venue_type = v_type;
+            }
+            <VenueInfo>::insert(&venue_id, venue.clone());
+            Self::deposit_event(RawEvent::VenueUpdated(did, venue_id, venue.details, venue.venue_type));
             Ok(())
         }
 
