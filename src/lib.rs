@@ -737,7 +737,7 @@ decl_module! {
                             LegStatus::ExecutionToBeSkipped(receipt.signer.clone(), receipt.receipt_uid)
                         );
                     } else {
-                        if T::Portfolio::lock_tokens(leg_details.from, leg_details.amount, &leg_details.asset).is_err() {
+                        if T::Portfolio::lock_tokens(&leg_details.from, &leg_details.asset, &leg_details.amount).is_err() {
                             // rustc fails to infer return type of `with_transaction` if you use ?/map_err here
                             return Err(DispatchError::from(Error::<T>::FailedToLockTokens));
                         }
@@ -807,7 +807,7 @@ decl_module! {
                 let leg = Self::instruction_legs(instruction_id, leg_id);
                 T::Portfolio::check_portfolio_custody(leg.from, did)?;
                 // Lock tokens that are part of the leg
-                T::Portfolio::lock_tokens(leg.from, leg.amount, &leg.asset)?;
+                T::Portfolio::lock_tokens(&leg.from, &leg.asset, &leg.amount)?;
                 <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
                 <InstructionLegStatus<T>>::insert(instruction_id, leg_id, LegStatus::ExecutionPending);
                 Self::deposit_event(RawEvent::ReceiptUnclaimed(did, instruction_id, leg_id, receipt_uid, signer));
@@ -1033,9 +1033,9 @@ impl<T: Trait> Module<T> {
                 LegStatus::ExecutionPending => {
                     // Tokens are unlocked, need to be unlocked
                     T::Portfolio::unlock_tokens(
-                        leg_details.from,
-                        leg_details.amount,
+                        &leg_details.from,
                         &leg_details.asset,
+                        &leg_details.amount,
                     )?;
                 }
                 LegStatus::PendingTokenLock => {
@@ -1193,9 +1193,9 @@ impl<T: Trait> Module<T> {
                 legs.filter(|(_leg_id, leg_details)| portfolios.contains(&leg_details.from))
             {
                 if T::Portfolio::lock_tokens(
-                    leg_details.from,
-                    leg_details.amount,
+                    &leg_details.from,
                     &leg_details.asset,
+                    &leg_details.amount,
                 )
                 .is_err()
                 {
@@ -1270,7 +1270,7 @@ impl<T: Trait> Module<T> {
             Error::<T>::InvalidSignature
         );
 
-        T::Portfolio::unlock_tokens(leg.from, leg.amount, &leg.asset)?;
+        T::Portfolio::unlock_tokens(&leg.from, &leg.asset, &leg.amount)?;
 
         <ReceiptsUsed<T>>::insert(&signer, receipt_uid, true);
 
@@ -1306,9 +1306,9 @@ impl<T: Trait> Module<T> {
                     // This can never return an error since the settlement module
                     // must've locked these tokens when instruction was authorized
                     T::Portfolio::unlock_tokens(
-                        leg_details.from,
-                        leg_details.amount,
+                        &leg_details.from,
                         &leg_details.asset,
+                        &leg_details.amount,
                     )
                     .ok();
                 }
