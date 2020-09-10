@@ -641,7 +641,7 @@ decl_module! {
 
                     match user_auth_status {
                         AuthorizationStatus::Authorized => { portfolios_to_unauthorize.insert(portfolio); },
-                        AuthorizationStatus::Pending => T::Portfolio::check_portfolio_custody(portfolio, did)?,
+                        AuthorizationStatus::Pending => T::Portfolio::ensure_portfolio_custody(portfolio, did)?,
                         _ => return Err(DispatchError::from(Error::<T>::NoPendingAuth))
                     };
 
@@ -691,7 +691,7 @@ decl_module! {
 
             // verify portfolio custodianship and check if it is a counter party with a pending or rejected authorization
             for portfolio in &portfolios {
-                T::Portfolio::check_portfolio_custody(*portfolio, did)?;
+                T::Portfolio::ensure_portfolio_custody(*portfolio, did)?;
                 let user_auth = Self::user_auths(portfolio, instruction_id);
                 ensure!(
                     user_auth == AuthorizationStatus::Pending || user_auth == AuthorizationStatus::Rejected,
@@ -780,7 +780,7 @@ decl_module! {
         pub fn claim_receipt(origin, instruction_id: u64, receipt_details: ReceiptDetails<T::AccountId, T::OffChainSignature>) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
-            T::Portfolio::check_portfolio_custody(Self::instruction_legs(&instruction_id, &receipt_details.leg_id).from, did)?;
+            T::Portfolio::ensure_portfolio_custody(Self::instruction_legs(&instruction_id, &receipt_details.leg_id).from, did)?;
             Self::unsafe_claim_receipt(
                 did,
                 instruction_id,
@@ -805,7 +805,7 @@ decl_module! {
 
             if let LegStatus::ExecutionToBeSkipped(signer, receipt_uid) = Self::instruction_leg_status(instruction_id, leg_id) {
                 let leg = Self::instruction_legs(instruction_id, leg_id);
-                T::Portfolio::check_portfolio_custody(leg.from, did)?;
+                T::Portfolio::ensure_portfolio_custody(leg.from, did)?;
                 // Lock tokens that are part of the leg
                 T::Portfolio::lock_tokens(&leg.from, &leg.asset, &leg.amount)?;
                 <ReceiptsUsed<T>>::insert(&signer, receipt_uid, false);
@@ -1007,7 +1007,7 @@ impl<T: Trait> Module<T> {
     ) -> DispatchResult {
         // checks custodianship of portfolios and authorization status
         for portfolio in &portfolios {
-            T::Portfolio::check_portfolio_custody(*portfolio, did)?;
+            T::Portfolio::ensure_portfolio_custody(*portfolio, did)?;
             ensure!(
                 Self::user_auths(portfolio, instruction_id) == AuthorizationStatus::Authorized,
                 Error::<T>::InstructionNotAuthorized
@@ -1184,7 +1184,7 @@ impl<T: Trait> Module<T> {
                     || user_auth == AuthorizationStatus::Rejected,
                 Error::<T>::NoPendingAuth
             );
-            T::Portfolio::check_portfolio_custody(*portfolio, did)?;
+            T::Portfolio::ensure_portfolio_custody(*portfolio, did)?;
         }
 
         with_transaction(|| {
