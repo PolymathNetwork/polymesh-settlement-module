@@ -3,7 +3,8 @@ use super::{
     ExtBuilder,
 };
 
-use pallet_asset::{self as asset, AssetType};
+use pallet_asset::{self as asset};
+use pallet_asset_types::AssetType;
 use pallet_balances as balances;
 use pallet_compliance_manager as compliance_manager;
 use pallet_identity as identity;
