@@ -167,8 +167,8 @@ fn basic_settlement() {
                 SettlementType::SettleOnAuthorization,
                 None,
                 vec![Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker,
                     amount: amount
                 }]
@@ -224,8 +224,8 @@ fn create_and_authorize_instruction() {
                 SettlementType::SettleOnAuthorization,
                 None,
                 vec![Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker,
                     amount: amount
                 }],
@@ -236,11 +236,17 @@ fn create_and_authorize_instruction() {
             assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
 
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
 
@@ -285,8 +291,8 @@ fn overdraft_failure() {
                 SettlementType::SettleOnAuthorization,
                 None,
                 vec![Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker,
                     amount: amount
                 }]
@@ -333,14 +339,14 @@ fn token_swap() {
             let amount = 100u128;
             let legs = vec![
                 Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker,
                     amount: amount,
                 },
                 Leg {
-                    from: bob_did.into(),
-                    to: alice_did.into(),
+                    from: PortfolioId::default_portfolio(bob_did),
+                    to: PortfolioId::default_portfolio(alice_did),
                     asset: ticker2,
                     amount: amount,
                 },
@@ -355,11 +361,17 @@ fn token_swap() {
             ));
 
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
 
@@ -410,19 +422,31 @@ fn token_swap() {
                 1
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -434,7 +458,7 @@ fn token_swap() {
                 LegStatus::PendingTokenLock
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 amount
             );
 
@@ -454,19 +478,31 @@ fn token_swap() {
                 2
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -478,7 +514,7 @@ fn token_swap() {
                 LegStatus::PendingTokenLock
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 0
             );
 
@@ -493,19 +529,31 @@ fn token_swap() {
                 1
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -517,7 +565,7 @@ fn token_swap() {
                 LegStatus::PendingTokenLock
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 amount
             );
 
@@ -534,15 +582,21 @@ fn token_swap() {
 
             // Instruction should've settled
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 0
             );
             assert_eq!(
@@ -590,14 +644,14 @@ fn claiming_receipt() {
             let amount = 100u128;
             let legs = vec![
                 Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker,
                     amount: amount,
                 },
                 Leg {
-                    from: bob_did.into(),
-                    to: alice_did.into(),
+                    from: PortfolioId::default_portfolio(bob_did),
+                    to: PortfolioId::default_portfolio(alice_did),
                     asset: ticker2,
                     amount: amount,
                 },
@@ -612,11 +666,17 @@ fn claiming_receipt() {
             ));
 
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
 
@@ -658,8 +718,8 @@ fn claiming_receipt() {
 
             let msg = Receipt {
                 receipt_uid: 0,
-                from: alice_did.into(),
-                to: bob_did.into(),
+                from: PortfolioId::default_portfolio(alice_did),
+                to: PortfolioId::default_portfolio(bob_did),
                 asset: ticker,
                 amount: amount,
             };
@@ -691,19 +751,31 @@ fn claiming_receipt() {
                 1
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -715,7 +787,7 @@ fn claiming_receipt() {
                 LegStatus::PendingTokenLock
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 amount
             );
 
@@ -726,8 +798,8 @@ fn claiming_receipt() {
 
             let msg2 = Receipt {
                 receipt_uid: 0,
-                from: alice_did.into(),
-                to: alice_did.into(),
+                from: PortfolioId::default_portfolio(alice_did),
+                to: PortfolioId::default_portfolio(alice_did),
                 asset: ticker,
                 amount: amount,
             };
@@ -769,19 +841,31 @@ fn claiming_receipt() {
                 1
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -793,7 +877,7 @@ fn claiming_receipt() {
                 LegStatus::PendingTokenLock
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 0
             );
 
@@ -813,19 +897,31 @@ fn claiming_receipt() {
                 1
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -837,7 +933,7 @@ fn claiming_receipt() {
                 LegStatus::PendingTokenLock
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 amount
             );
 
@@ -866,19 +962,31 @@ fn claiming_receipt() {
                 1
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -890,7 +998,7 @@ fn claiming_receipt() {
                 LegStatus::PendingTokenLock
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 0
             );
 
@@ -907,15 +1015,21 @@ fn claiming_receipt() {
 
             // Instruction should've settled
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 0
             );
             assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
@@ -958,14 +1072,14 @@ fn settle_on_block() {
             let amount = 100u128;
             let legs = vec![
                 Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker,
                     amount: amount,
                 },
                 Leg {
-                    from: bob_did.into(),
-                    to: alice_did.into(),
+                    from: PortfolioId::default_portfolio(bob_did),
+                    to: PortfolioId::default_portfolio(alice_did),
                     asset: ticker2,
                     amount: amount,
                 },
@@ -985,11 +1099,17 @@ fn settle_on_block() {
             );
 
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
 
@@ -1040,19 +1160,31 @@ fn settle_on_block() {
                 1
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -1064,7 +1196,7 @@ fn settle_on_block() {
                 LegStatus::PendingTokenLock
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 amount
             );
 
@@ -1083,19 +1215,31 @@ fn settle_on_block() {
                 0
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
@@ -1107,11 +1251,11 @@ fn settle_on_block() {
                 LegStatus::ExecutionPending
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 amount
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(bob_did), &ticker2),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(bob_did), &ticker2),
                 amount
             );
 
@@ -1124,15 +1268,21 @@ fn settle_on_block() {
 
             // Instruction should've settled
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 0
             );
             assert_eq!(
@@ -1185,14 +1335,14 @@ fn failed_execution() {
             let amount = 100u128;
             let legs = vec![
                 Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker,
                     amount: amount,
                 },
                 Leg {
-                    from: bob_did.into(),
-                    to: alice_did.into(),
+                    from: PortfolioId::default_portfolio(bob_did),
+                    to: PortfolioId::default_portfolio(alice_did),
                     asset: ticker2,
                     amount: amount,
                 },
@@ -1212,11 +1362,17 @@ fn failed_execution() {
             );
 
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
 
@@ -1267,19 +1423,31 @@ fn failed_execution() {
                 1
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -1291,7 +1459,7 @@ fn failed_execution() {
                 LegStatus::PendingTokenLock
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 amount
             );
 
@@ -1310,19 +1478,31 @@ fn failed_execution() {
                 0
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
@@ -1334,11 +1514,11 @@ fn failed_execution() {
                 LegStatus::ExecutionPending
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 amount
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(bob_did), &ticker2),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(bob_did), &ticker2),
                 amount
             );
 
@@ -1351,19 +1531,25 @@ fn failed_execution() {
 
             // Instruction should've settled
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 0
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(bob_did), &ticker2),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(bob_did), &ticker2),
                 0
             );
             assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
@@ -1390,8 +1576,8 @@ fn venue_filtering() {
             let instruction_counter = Settlement::instruction_counter();
 
             let legs = vec![Leg {
-                from: alice_did.into(),
-                to: bob_did.into(),
+                from: PortfolioId::default_portfolio(alice_did),
+                to: PortfolioId::default_portfolio(bob_did),
                 asset: ticker,
                 amount: 10,
             }];
@@ -1560,8 +1746,8 @@ fn basic_fuzzing() {
                                 balances.insert((tickers[i * 4 + j], dids[k], "final").encode(), 0);
                                 receipts.push(Receipt {
                                     receipt_uid: u64::try_from(k * 1000 + i * 4 + j).unwrap(),
-                                    from: dids[j].into(),
-                                    to: dids[k].into(),
+                                    from: PortfolioId::default_portfolio(dids[j]),
+                                    to: PortfolioId::default_portfolio(dids[k]),
                                     asset: tickers[i * 4 + j],
                                     amount: 1u128,
                                 });
@@ -1571,8 +1757,8 @@ fn basic_fuzzing() {
                                 final_i -= 1;
                             }
                             legs.push(Leg {
-                                from: dids[j].into(),
-                                to: dids[k].into(),
+                                from: PortfolioId::default_portfolio(dids[j]),
+                                to: PortfolioId::default_portfolio(dids[k]),
                                 asset: tickers[i * 4 + j],
                                 amount: 1,
                             });
@@ -1628,7 +1814,7 @@ fn basic_fuzzing() {
                     u64::try_from(*receipt_legs.get(&(receipt.encode())).unwrap()).unwrap();
                 let signer = &signers[dids
                     .iter()
-                    .position(|&from| PortfolioId::from(from) == receipt.from)
+                    .position(|&from| PortfolioId::default_portfolio(from) == receipt.from)
                     .unwrap()];
                 for _ in 0..2 {
                     if random() {
@@ -1681,7 +1867,10 @@ fn basic_fuzzing() {
             for i in 0..40 {
                 for j in 0..4 {
                     assert_eq!(
-                        Portfolio::locked_assets(PortfolioId::from(dids[j]), &tickers[i]),
+                        Portfolio::locked_assets(
+                            PortfolioId::default_portfolio(dids[j]),
+                            &tickers[i]
+                        ),
                         0
                     );
                     if fail {
@@ -1736,14 +1925,14 @@ fn claim_multiple_receipts_during_authorization() {
             let amount = 100u128;
             let legs = vec![
                 Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker,
                     amount: amount,
                 },
                 Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker2,
                     amount: amount,
                 },
@@ -1764,22 +1953,22 @@ fn claim_multiple_receipts_during_authorization() {
 
             let msg1 = Receipt {
                 receipt_uid: 0,
-                from: alice_did.into(),
-                to: bob_did.into(),
+                from: PortfolioId::default_portfolio(alice_did),
+                to: PortfolioId::default_portfolio(bob_did),
                 asset: ticker,
                 amount: amount,
             };
             let msg2 = Receipt {
                 receipt_uid: 0,
-                from: alice_did.into(),
-                to: bob_did.into(),
+                from: PortfolioId::default_portfolio(alice_did),
+                to: PortfolioId::default_portfolio(bob_did),
                 asset: ticker2,
                 amount: amount,
             };
             let msg3 = Receipt {
                 receipt_uid: 1,
-                from: alice_did.into(),
-                to: bob_did.into(),
+                from: PortfolioId::default_portfolio(alice_did),
+                to: PortfolioId::default_portfolio(bob_did),
                 asset: ticker2,
                 amount: amount,
             };
@@ -1840,19 +2029,31 @@ fn claim_multiple_receipts_during_authorization() {
                 1
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Pending
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(alice_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(alice_did)
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::auths_received(instruction_counter, PortfolioId::from(bob_did)),
+                Settlement::auths_received(
+                    instruction_counter,
+                    PortfolioId::default_portfolio(bob_did)
+                ),
                 AuthorizationStatus::Unknown
             );
             assert_eq!(
@@ -1864,7 +2065,7 @@ fn claim_multiple_receipts_during_authorization() {
                 LegStatus::ExecutionToBeSkipped(AccountKeyring::Alice.public(), 1)
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 0
             );
 
@@ -1881,15 +2082,21 @@ fn claim_multiple_receipts_during_authorization() {
 
             // Instruction should've settled
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(alice_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(alice_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Settlement::user_auths(PortfolioId::from(bob_did), instruction_counter),
+                Settlement::user_auths(
+                    PortfolioId::default_portfolio(bob_did),
+                    instruction_counter
+                ),
                 AuthorizationStatus::Authorized
             );
             assert_eq!(
-                Portfolio::locked_assets(PortfolioId::from(alice_did), &ticker),
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
                 0
             );
             assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
@@ -1920,8 +2127,8 @@ fn overload_settle_on_block() {
 
             let legs = vec![
                 Leg {
-                    from: alice_did.into(),
-                    to: bob_did.into(),
+                    from: PortfolioId::default_portfolio(alice_did),
+                    to: PortfolioId::default_portfolio(bob_did),
                     asset: ticker,
                     amount: 1u128,
                 };
@@ -2167,8 +2374,8 @@ fn test_weights_for_settlement_transaction() {
 
             // Create instruction
             let legs = vec![Leg {
-                from: alice_did.into(),
-                to: bob_did.into(),
+                from: PortfolioId::default_portfolio(alice_did),
+                to: PortfolioId::default_portfolio(bob_did),
                 asset: ticker,
                 amount: 100u128,
             }];
