@@ -2132,23 +2132,23 @@ fn test_weights_for_settlement_transaction() {
                 ticker,
                 vec![
                     Condition {
-                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id)),
+                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id.into())),
                         issuers: vec![eve_did]
                     },
                     Condition {
-                        condition_type: ConditionType::IsAbsent(Claim::BuyLockup(ticker_id)),
+                        condition_type: ConditionType::IsAbsent(Claim::BuyLockup(ticker_id.into())),
                         issuers: vec![eve_did]
                     }
                 ],
                 vec![
                     Condition {
-                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id)),
+                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id.into())),
                         issuers: vec![eve_did]
                     },
                     Condition {
                         condition_type: ConditionType::IsAnyOf(vec![
-                            Claim::BuyLockup(ticker_id),
-                            Claim::KnowYourCustomer(ticker_id)
+                            Claim::BuyLockup(ticker_id.into()),
+                            Claim::KnowYourCustomer(ticker_id.into())
                         ]),
                         issuers: vec![eve_did]
                     }
@@ -2157,13 +2157,13 @@ fn test_weights_for_settlement_transaction() {
 
             // Providing claim to sender and receiver
             // For Alice
-            assert_add_claim!(eve_signed.clone(), alice_did, Claim::Accredited(ticker_id));
+            assert_add_claim!(eve_signed.clone(), alice_did, Claim::Accredited(ticker_id.into()));
             // For Bob
-            assert_add_claim!(eve_signed.clone(), bob_did, Claim::Accredited(ticker_id));
+            assert_add_claim!(eve_signed.clone(), bob_did, Claim::Accredited(ticker_id.into()));
             assert_add_claim!(
                 eve_signed.clone(),
                 bob_did,
-                Claim::KnowYourCustomer(ticker_id)
+                Claim::KnowYourCustomer(ticker_id.into())
             );
 
             // Provide scope claim as well to pass through the transaction.
