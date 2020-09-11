@@ -2734,9 +2734,12 @@ fn multiple_portfolio_settlement() {
             );
 
             // Bob approves the instruction with both of his portfolios in a single transaction
-            let mut set = BTreeSet::new();
-            set.insert(PortfolioId::default_portfolio(bob_did));
-            set.insert(PortfolioId::user_portfolio(bob_did, bob_num));
+            let set = vec![
+                PortfolioId::default_portfolio(bob_did),
+                PortfolioId::user_portfolio(bob_did, bob_num),
+            ]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
@@ -2863,9 +2866,12 @@ fn multiple_custodian_settlement() {
             );
 
             // Alice approves the instruction from both of her portfolios
-            let mut set = BTreeSet::new();
-            set.insert(PortfolioId::default_portfolio(alice_did));
-            set.insert(PortfolioId::user_portfolio(alice_did, alice_num));
+            let set = vec![
+                PortfolioId::default_portfolio(alice_did),
+                PortfolioId::user_portfolio(alice_did, alice_num),
+            ]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
@@ -2909,9 +2915,12 @@ fn multiple_custodian_settlement() {
             assert_ok!(Identity::accept_authorization(bob_signed.clone(), auth_id2));
 
             // Bob fails to approve the instruction with both of his portfolios since he doesn't have custody for the second one
-            let mut set_bob = BTreeSet::new();
-            set_bob.insert(PortfolioId::default_portfolio(bob_did));
-            set_bob.insert(PortfolioId::user_portfolio(bob_did, bob_num));
+            let set_bob = vec![
+                PortfolioId::default_portfolio(bob_did),
+                PortfolioId::user_portfolio(bob_did, bob_num),
+            ]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
             assert_noop!(
                 Settlement::authorize_instruction(bob_signed.clone(), instruction_counter, set_bob),
                 PortfolioError::UnauthorizedCustodian
@@ -2942,9 +2951,12 @@ fn multiple_custodian_settlement() {
             );
 
             // Alice can authorize instruction from remaining portfolios since she has the custody
-            let mut set_final = BTreeSet::new();
-            set_final.insert(PortfolioId::default_portfolio(alice_did));
-            set_final.insert(PortfolioId::user_portfolio(bob_did, bob_num));
+            let set_final = vec![
+                PortfolioId::default_portfolio(alice_did),
+                PortfolioId::user_portfolio(bob_did, bob_num),
+            ]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
