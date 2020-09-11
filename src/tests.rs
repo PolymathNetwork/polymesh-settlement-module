@@ -1,5 +1,8 @@
 use super::{
-    storage::{make_account_without_cdd, register_keyring_account, TestStorage},
+    storage::{
+        make_account_without_cdd, provide_scope_claim_to_multiple_parties,
+        register_keyring_account, TestStorage,
+    },
     ExtBuilder,
 };
 
@@ -120,6 +123,7 @@ fn venue_registration() {
 #[test]
 fn basic_settlement() {
     ExtBuilder::default()
+        .cdd_providers(vec![AccountKeyring::Eve.public()])
         .set_max_legs_allowed(500)
         .build()
         .execute_with(|| {
@@ -134,6 +138,11 @@ fn basic_settlement() {
             let alice_init_balance = Asset::balance_of(&ticker, alice_did);
             let bob_init_balance = Asset::balance_of(&ticker, bob_did);
             let amount = 100u128;
+            let eve = AccountKeyring::Eve.public();
+
+            // Provide scope claim to sender and receiver of the transaction.
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
+
             assert_ok!(Settlement::add_instruction(
                 alice_signed.clone(),
                 venue_counter,
@@ -175,6 +184,7 @@ fn basic_settlement() {
 #[test]
 fn create_and_authorize_instruction() {
     ExtBuilder::default()
+        .cdd_providers(vec![AccountKeyring::Eve.public()])
         .set_max_legs_allowed(500)
         .build()
         .execute_with(|| {
@@ -189,6 +199,11 @@ fn create_and_authorize_instruction() {
             let alice_init_balance = Asset::balance_of(&ticker, alice_did);
             let bob_init_balance = Asset::balance_of(&ticker, bob_did);
             let amount = 100u128;
+            let eve = AccountKeyring::Eve.public();
+
+            // Provide scope claim to both the parties of the transaction.
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
+
             assert_ok!(Settlement::add_and_authorize_instruction(
                 alice_signed.clone(),
                 venue_counter,
@@ -275,6 +290,7 @@ fn overdraft_failure() {
 #[test]
 fn token_swap() {
     ExtBuilder::default()
+        .cdd_providers(vec![AccountKeyring::Eve.public()])
         .set_max_legs_allowed(500)
         .build()
         .execute_with(|| {
@@ -287,6 +303,7 @@ fn token_swap() {
             let token_name2 = b"ACME2";
             let ticker2 = Ticker::try_from(&token_name2[..]).unwrap();
             let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
+            let eve = AccountKeyring::Eve.public();
             init(token_name2, ticker2, AccountKeyring::Bob.public());
 
             let instruction_counter = Settlement::instruction_counter();
@@ -363,6 +380,10 @@ fn token_swap() {
             assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
             assert_eq!(Asset::balance_of(&ticker2, alice_did), alice_init_balance2);
             assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
+
+            // Provide scope claim to parties involved in a instruction.
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker2, eve);
 
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
@@ -532,6 +553,7 @@ fn token_swap() {
 #[test]
 fn claiming_receipt() {
     ExtBuilder::default()
+        .cdd_providers(vec![AccountKeyring::Eve.public()])
         .set_max_legs_allowed(500)
         .build()
         .execute_with(|| {
@@ -544,6 +566,7 @@ fn claiming_receipt() {
             let token_name2 = b"ACME2";
             let ticker2 = Ticker::try_from(&token_name2[..]).unwrap();
             let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
+            let eve = AccountKeyring::Eve.public();
             init(token_name2, ticker2, AccountKeyring::Bob.public());
 
             let instruction_counter = Settlement::instruction_counter();
@@ -551,6 +574,10 @@ fn claiming_receipt() {
             let bob_init_balance = Asset::balance_of(&ticker, bob_did);
             let alice_init_balance2 = Asset::balance_of(&ticker2, alice_did);
             let bob_init_balance2 = Asset::balance_of(&ticker2, bob_did);
+
+            // Provide scope claims to multiple parties of a transactions.
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker2, eve);
 
             let amount = 100u128;
             let legs = vec![
@@ -902,6 +929,7 @@ fn claiming_receipt() {
 #[test]
 fn settle_on_block() {
     ExtBuilder::default()
+        .cdd_providers(vec![AccountKeyring::Eve.public()])
         .set_max_legs_allowed(500)
         .build()
         .execute_with(|| {
@@ -916,7 +944,7 @@ fn settle_on_block() {
             let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
             init(token_name2, ticker2, AccountKeyring::Bob.public());
             let block_number = System::block_number() + 1;
-
+            let eve = AccountKeyring::Eve.public();
             let instruction_counter = Settlement::instruction_counter();
             let alice_init_balance = Asset::balance_of(&ticker, alice_did);
             let bob_init_balance = Asset::balance_of(&ticker, bob_did);
@@ -996,6 +1024,10 @@ fn settle_on_block() {
             assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
             assert_eq!(Asset::balance_of(&ticker2, alice_did), alice_init_balance2);
             assert_eq!(Asset::balance_of(&ticker2, bob_did), bob_init_balance2);
+
+            // Before authorization need to provide the scope claim for both the parties of a transaction.
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker2, eve);
 
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
@@ -1349,6 +1381,7 @@ fn failed_execution() {
 #[test]
 fn venue_filtering() {
     ExtBuilder::default()
+        .cdd_providers(vec![AccountKeyring::Eve.public()])
         .set_max_legs_allowed(500)
         .build()
         .execute_with(|| {
@@ -1361,6 +1394,10 @@ fn venue_filtering() {
             let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
             let block_number = System::block_number() + 1;
             let instruction_counter = Settlement::instruction_counter();
+            let eve = AccountKeyring::Eve.public();
+
+            // provide scope claim.
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
 
             let legs = vec![Leg {
                 from: alice_did,
@@ -1430,6 +1467,7 @@ fn venue_filtering() {
 #[test]
 fn basic_fuzzing() {
     ExtBuilder::default()
+        .cdd_providers(vec![AccountKeyring::Eve.public()])
         .set_max_legs_allowed(500)
         .build()
         .execute_with(|| {
@@ -1442,6 +1480,7 @@ fn basic_fuzzing() {
             let dave_signed = Origin::signed(AccountKeyring::Dave.public());
             let dave_did = register_keyring_account(AccountKeyring::Dave).unwrap();
             let venue_counter = Settlement::venue_counter();
+            let eve = AccountKeyring::Eve.public();
             assert_ok!(Settlement::create_venue(
                 Origin::signed(AccountKeyring::Alice.public()),
                 VenueDetails::default(),
@@ -1539,6 +1578,12 @@ fn basic_fuzzing() {
                                 balances.insert((tickers[i * 4 + j], dids[k], "final").encode(), 1);
                                 final_i -= 1;
                             }
+                            // Provide scope claim for all the dids
+                            provide_scope_claim_to_multiple_parties(
+                                &[dids[j], dids[k]],
+                                tickers[i * 4 + j],
+                                eve,
+                            );
                             legs.push(Leg {
                                 from: dids[j],
                                 to: dids[k],
@@ -1864,6 +1909,7 @@ fn claim_multiple_receipts_during_authorization() {
 #[test]
 fn overload_settle_on_block() {
     ExtBuilder::default()
+        .cdd_providers(vec![AccountKeyring::Eve.public()])
         .set_max_legs_allowed(500)
         .build()
         .execute_with(|| {
@@ -1877,7 +1923,7 @@ fn overload_settle_on_block() {
             let instruction_counter = Settlement::instruction_counter();
             let alice_init_balance = Asset::balance_of(&ticker, alice_did);
             let bob_init_balance = Asset::balance_of(&ticker, bob_did);
-
+            let eve = AccountKeyring::Eve.public();
             let block_number = System::block_number() + 1;
 
             let legs = vec![
@@ -1889,6 +1935,9 @@ fn overload_settle_on_block() {
                 };
                 500
             ];
+
+            // Provide scope claim to multiple parties of the transaction.
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, eve);
 
             for _ in 0..2 {
                 assert_ok!(Settlement::add_instruction(
@@ -2046,6 +2095,7 @@ fn encode_receipt() {
 #[test]
 fn test_weights_for_settlement_transaction() {
     ExtBuilder::default()
+        .cdd_providers(vec![AccountKeyring::Dave.public()])
         .set_max_legs_allowed(5) // set maximum no. of legs allowed for an instruction.
         .set_max_tms_allowed(4) // set maximum no. of tms an asset can have.
         .build()
@@ -2065,6 +2115,8 @@ fn test_weights_for_settlement_transaction() {
             let venue_counter = init(token_name, ticker, alice);
             let instruction_counter = Settlement::instruction_counter();
 
+            let dave = AccountKeyring::Dave.public();
+
             // Get token Id.
             let ticker_id = Identity::get_token_did(&ticker).unwrap();
 
@@ -2080,23 +2132,23 @@ fn test_weights_for_settlement_transaction() {
                 ticker,
                 vec![
                     Condition {
-                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id)),
+                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id.into())),
                         issuers: vec![eve_did]
                     },
                     Condition {
-                        condition_type: ConditionType::IsAbsent(Claim::BuyLockup(ticker_id)),
+                        condition_type: ConditionType::IsAbsent(Claim::BuyLockup(ticker_id.into())),
                         issuers: vec![eve_did]
                     }
                 ],
                 vec![
                     Condition {
-                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id)),
+                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id.into())),
                         issuers: vec![eve_did]
                     },
                     Condition {
                         condition_type: ConditionType::IsAnyOf(vec![
-                            Claim::BuyLockup(ticker_id),
-                            Claim::KnowYourCustomer(ticker_id)
+                            Claim::BuyLockup(ticker_id.into()),
+                            Claim::KnowYourCustomer(ticker_id.into())
                         ]),
                         issuers: vec![eve_did]
                     }
@@ -2105,14 +2157,17 @@ fn test_weights_for_settlement_transaction() {
 
             // Providing claim to sender and receiver
             // For Alice
-            assert_add_claim!(eve_signed.clone(), alice_did, Claim::Accredited(ticker_id));
+            assert_add_claim!(eve_signed.clone(), alice_did, Claim::Accredited(ticker_id.into()));
             // For Bob
-            assert_add_claim!(eve_signed.clone(), bob_did, Claim::Accredited(ticker_id));
+            assert_add_claim!(eve_signed.clone(), bob_did, Claim::Accredited(ticker_id.into()));
             assert_add_claim!(
                 eve_signed.clone(),
                 bob_did,
-                Claim::KnowYourCustomer(ticker_id)
+                Claim::KnowYourCustomer(ticker_id.into())
             );
+
+            // Provide scope claim as well to pass through the transaction.
+            provide_scope_claim_to_multiple_parties(&[alice_did, bob_did], ticker, dave);
 
             // Create instruction
             let legs = vec![Leg {
