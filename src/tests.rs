@@ -1,5 +1,7 @@
 use super::{
-    storage::{make_account_without_cdd, register_keyring_account, TestStorage},
+    storage::{
+        default_portfolio_btreeset, make_account_without_cdd, register_keyring_account, TestStorage,
+    },
     ExtBuilder,
 };
 
@@ -12,13 +14,12 @@ use pallet_settlement::{
     InstructionStatus, Leg, LegStatus, Receipt, ReceiptDetails, SettlementType, VenueDetails,
     VenueType,
 };
-use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
 use polymesh_primitives::{Claim, Condition, ConditionType, IdentityId, PortfolioId, Ticker};
 
 use codec::Encode;
 use frame_support::dispatch::GetDispatchInfo;
 use frame_support::{assert_noop, assert_ok};
-use rand::{prelude::*, seq::SliceRandom, thread_rng};
+use rand::{prelude::*, thread_rng};
 use sp_core::sr25519::Public;
 use sp_runtime::AnySignature;
 use std::collections::HashMap;
@@ -178,7 +179,7 @@ fn basic_settlement() {
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
 
             assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
@@ -186,7 +187,7 @@ fn basic_settlement() {
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
-                bob_did.into()
+                default_portfolio_btreeset(bob_did)
             ));
 
             // Instruction should've settled
@@ -229,7 +230,7 @@ fn create_and_authorize_instruction() {
                     asset: ticker,
                     amount: amount
                 }],
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
 
             assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
@@ -253,7 +254,7 @@ fn create_and_authorize_instruction() {
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
-                bob_did.into()
+                default_portfolio_btreeset(bob_did)
             ));
 
             // Instruction should've settled
@@ -303,7 +304,7 @@ fn overdraft_failure() {
                 Settlement::authorize_instruction(
                     alice_signed.clone(),
                     instruction_counter,
-                    alice_did.into()
+                    default_portfolio_btreeset(alice_did)
                 ),
                 Error::FailedToLockTokens
             );
@@ -414,7 +415,7 @@ fn token_swap() {
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
 
             assert_eq!(
@@ -470,7 +471,7 @@ fn token_swap() {
             assert_ok!(Settlement::unauthorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
 
             assert_eq!(
@@ -521,7 +522,7 @@ fn token_swap() {
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
 
             assert_eq!(
@@ -577,7 +578,7 @@ fn token_swap() {
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
-                bob_did.into()
+                default_portfolio_btreeset(bob_did)
             ));
 
             // Instruction should've settled
@@ -743,7 +744,7 @@ fn claiming_receipt() {
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
 
             assert_eq!(
@@ -1010,7 +1011,7 @@ fn claiming_receipt() {
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
-                bob_did.into()
+                default_portfolio_btreeset(bob_did)
             ));
 
             // Instruction should've settled
@@ -1152,7 +1153,7 @@ fn settle_on_block() {
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
 
             assert_eq!(
@@ -1208,7 +1209,7 @@ fn settle_on_block() {
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
-                bob_did.into()
+                default_portfolio_btreeset(bob_did)
             ));
             assert_eq!(
                 Settlement::instruction_auths_pending(instruction_counter),
@@ -1415,7 +1416,7 @@ fn failed_execution() {
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
 
             assert_eq!(
@@ -1471,7 +1472,7 @@ fn failed_execution() {
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
-                bob_did.into()
+                default_portfolio_btreeset(bob_did)
             ));
             assert_eq!(
                 Settlement::instruction_auths_pending(instruction_counter),
@@ -1614,22 +1615,22 @@ fn venue_filtering() {
                 SettlementType::SettleOnBlock(block_number + 1),
                 None,
                 legs.clone(),
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
             assert_ok!(Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
-                bob_did.into()
+                default_portfolio_btreeset(bob_did)
             ));
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter + 1,
-                bob_did.into()
+                default_portfolio_btreeset(bob_did)
             ));
             next_block();
             assert_eq!(Asset::balance_of(&ticker, bob_did), 10);
@@ -1792,19 +1793,19 @@ fn basic_fuzzing() {
                         assert_ok!(Settlement::authorize_instruction(
                             signer.clone(),
                             instruction_counter,
-                            dids[i].into()
+                            default_portfolio_btreeset(dids[i])
                         ));
                         assert_ok!(Settlement::unauthorize_instruction(
                             signer.clone(),
                             instruction_counter,
-                            dids[i].into()
+                            default_portfolio_btreeset(dids[i])
                         ));
                     }
                 }
                 assert_ok!(Settlement::authorize_instruction(
                     signer.clone(),
                     instruction_counter,
-                    dids[i].into()
+                    default_portfolio_btreeset(dids[i])
                 ));
             }
 
@@ -1858,7 +1859,7 @@ fn basic_fuzzing() {
                 assert_ok!(Settlement::unauthorize_instruction(
                     signers[i].clone(),
                     instruction_counter,
-                    dids[i].into()
+                    default_portfolio_btreeset(dids[i])
                 ));
             }
 
@@ -1995,7 +1996,7 @@ fn claim_multiple_receipts_during_authorization() {
                             )
                         },
                     ],
-                    alice_did.into()
+                    default_portfolio_btreeset(alice_did)
                 ),
                 Error::ReceiptAlreadyClaimed
             );
@@ -2021,7 +2022,7 @@ fn claim_multiple_receipts_during_authorization() {
                         )
                     },
                 ],
-                alice_did.into()
+                default_portfolio_btreeset(alice_did)
             ));
 
             assert_eq!(
@@ -2077,7 +2078,7 @@ fn claim_multiple_receipts_during_authorization() {
             assert_ok!(Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
-                bob_did.into()
+                default_portfolio_btreeset(bob_did)
             ));
 
             // Instruction should've settled
@@ -2156,12 +2157,12 @@ fn overload_settle_on_block() {
                 assert_ok!(Settlement::authorize_instruction(
                     alice_signed.clone(),
                     instruction_counter + i,
-                    alice_did.into()
+                    default_portfolio_btreeset(alice_did)
                 ));
                 assert_ok!(Settlement::authorize_instruction(
                     bob_signed.clone(),
                     instruction_counter + i,
-                    bob_did.into()
+                    default_portfolio_btreeset(bob_did)
                 ));
             }
 
@@ -2246,7 +2247,7 @@ fn overload_settle_on_block() {
                 Settlement::authorize_instruction(
                     alice_signed.clone(),
                     instruction_counter + 2,
-                    alice_did.into()
+                    default_portfolio_btreeset(alice_did)
                 ),
                 Error::InstructionSettleBlockPassed
             );
@@ -2279,16 +2280,19 @@ fn encode_receipt() {
         let ticker = Ticker::try_from(&token_name[..]).unwrap();
         let msg1 = Receipt {
             receipt_uid: 0,
-            from: IdentityId::try_from(
-                "did:poly:0600000000000000000000000000000000000000000000000000000000000000",
-            )
-            .unwrap()
-            .into(),
-            to: IdentityId::try_from(
-                "did:poly:0600000000000000000000000000000000000000000000000000000000000000",
-            )
-            .unwrap()
-            .into(),
+            from: PortfolioId::default_portfolio(
+                IdentityId::try_from(
+                    "did:poly:0600000000000000000000000000000000000000000000000000000000000000",
+                )
+                .unwrap(),
+            ),
+            to: PortfolioId::default_portfolio(
+                IdentityId::try_from(
+                    "did:poly:0600000000000000000000000000000000000000000000000000000000000000",
+                )
+                .unwrap()
+                .into(),
+            ),
             asset: ticker,
             amount: 100u128,
         };
@@ -2406,14 +2410,14 @@ fn test_weights_for_settlement_transaction() {
             let weight_for_authorize_instruction_1 =
                 SettlementCall::<TestStorage>::authorize_instruction(
                     instruction_counter,
-                    alice_did.into(),
+                    default_portfolio_btreeset(alice_did),
                 )
                 .get_dispatch_info()
                 .weight;
             let result_authorize_instruction_1 = Settlement::authorize_instruction(
                 alice_signed.clone(),
                 instruction_counter,
-                alice_did.into(),
+                default_portfolio_btreeset(alice_did),
             );
             assert_ok!(result_authorize_instruction_1);
             assert_eq!(
@@ -2425,14 +2429,14 @@ fn test_weights_for_settlement_transaction() {
             let weight_for_authorize_instruction_2 =
                 SettlementCall::<TestStorage>::authorize_instruction(
                     instruction_counter,
-                    bob_did.into(),
+                    default_portfolio_btreeset(bob_did),
                 )
                 .get_dispatch_info()
                 .weight;
             let result_authorize_instruction_2 = Settlement::authorize_instruction(
                 bob_signed.clone(),
                 instruction_counter,
-                bob_did.into(),
+                default_portfolio_btreeset(bob_did),
             );
             assert_ok!(result_authorize_instruction_2);
             assert_eq!(Asset::balance_of(ticker, bob_did), 100);
@@ -2440,9 +2444,14 @@ fn test_weights_for_settlement_transaction() {
                 .unwrap()
                 .actual_weight
                 .unwrap();
-            let (transfer_result, _weight_for_is_valid_transfer) =
-                Asset::_is_valid_transfer(&ticker, alice, alice_did.into(), bob_did.into(), 100)
-                    .unwrap();
+            let (transfer_result, _weight_for_is_valid_transfer) = Asset::_is_valid_transfer(
+                &ticker,
+                alice,
+                PortfolioId::default_portfolio(alice_did),
+                PortfolioId::default_portfolio(bob_did),
+                100,
+            )
+            .unwrap();
             assert_eq!(transfer_result, 81);
             assert!(weight_for_authorize_instruction_2 > acutal_weight);
         });
