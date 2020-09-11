@@ -2132,7 +2132,9 @@ fn test_weights_for_settlement_transaction() {
                 ticker,
                 vec![
                     Condition {
-                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id.into())),
+                        condition_type: ConditionType::IsPresent(Claim::Accredited(
+                            ticker_id.into()
+                        )),
                         issuers: vec![eve_did]
                     },
                     Condition {
@@ -2142,7 +2144,9 @@ fn test_weights_for_settlement_transaction() {
                 ],
                 vec![
                     Condition {
-                        condition_type: ConditionType::IsPresent(Claim::Accredited(ticker_id.into())),
+                        condition_type: ConditionType::IsPresent(Claim::Accredited(
+                            ticker_id.into()
+                        )),
                         issuers: vec![eve_did]
                     },
                     Condition {
@@ -2157,9 +2161,17 @@ fn test_weights_for_settlement_transaction() {
 
             // Providing claim to sender and receiver
             // For Alice
-            assert_add_claim!(eve_signed.clone(), alice_did, Claim::Accredited(ticker_id.into()));
+            assert_add_claim!(
+                eve_signed.clone(),
+                alice_did,
+                Claim::Accredited(ticker_id.into())
+            );
             // For Bob
-            assert_add_claim!(eve_signed.clone(), bob_did, Claim::Accredited(ticker_id.into()));
+            assert_add_claim!(
+                eve_signed.clone(),
+                bob_did,
+                Claim::Accredited(ticker_id.into())
+            );
             assert_add_claim!(
                 eve_signed.clone(),
                 bob_did,
