@@ -17,7 +17,8 @@ use pallet_settlement::{
     VenueType,
 };
 use polymesh_primitives::{
-    Claim, Condition, ConditionType, IdentityId, PortfolioId, PortfolioName, Ticker,
+    AuthorizationData, Claim, Condition, ConditionType, IdentityId, PortfolioId, PortfolioName,
+    Signatory, Ticker,
 };
 
 use codec::Encode;
@@ -35,6 +36,7 @@ type Identity = identity::Module<TestStorage>;
 type Balances = balances::Module<TestStorage>;
 type Asset = asset::Module<TestStorage>;
 type Portfolio = pallet_portfolio::Module<TestStorage>;
+type PortfolioError = pallet_portfolio::Error<TestStorage>;
 type Timestamp = pallet_timestamp::Module<TestStorage>;
 type ComplianceManager = compliance_manager::Module<TestStorage>;
 type AssetError = asset::Error<TestStorage>;
@@ -2739,6 +2741,214 @@ fn multiple_portfolio_settlement() {
                 bob_signed.clone(),
                 instruction_counter,
                 set
+            ));
+
+            // Instruction should've settled
+            assert_eq!(
+                Asset::balance_of(&ticker, alice_did),
+                alice_init_balance - amount * 2
+            );
+            assert_eq!(
+                Asset::balance_of(&ticker, bob_did),
+                bob_init_balance + amount * 2
+            );
+            assert_eq!(
+                Portfolio::default_portfolio_balance(alice_did, &ticker),
+                alice_init_balance - amount * 2,
+            );
+            assert_eq!(
+                Portfolio::default_portfolio_balance(bob_did, &ticker),
+                bob_init_balance + amount,
+            );
+            assert_eq!(
+                Portfolio::user_portfolio_balance(bob_did, bob_num, &ticker),
+                amount,
+            );
+            assert_eq!(
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
+                0
+            );
+        });
+}
+
+#[test]
+fn multiple_custodian_settlement() {
+    ExtBuilder::default()
+        .set_max_legs_allowed(500)
+        .build()
+        .execute_with(|| {
+            let alice_signed = Origin::signed(AccountKeyring::Alice.public());
+            let alice_did = register_keyring_account(AccountKeyring::Alice).unwrap();
+            let bob_signed = Origin::signed(AccountKeyring::Bob.public());
+            let bob_did = register_keyring_account(AccountKeyring::Bob).unwrap();
+
+            // Create portfolios
+            let name = PortfolioName::from([42u8].to_vec());
+            let alice_num = Portfolio::next_portfolio_number(&alice_did);
+            let bob_num = Portfolio::next_portfolio_number(&bob_did);
+            assert_ok!(Portfolio::create_portfolio(
+                bob_signed.clone(),
+                name.clone()
+            ));
+            assert_ok!(Portfolio::create_portfolio(
+                alice_signed.clone(),
+                name.clone()
+            ));
+
+            // Give custody of Bob's user portfolio to Alice
+            let auth_id = Identity::add_auth(
+                bob_did,
+                Signatory::from(alice_did),
+                AuthorizationData::PortfolioCustody(PortfolioId::user_portfolio(bob_did, bob_num)),
+                None,
+            );
+            assert_ok!(Identity::accept_authorization(
+                alice_signed.clone(),
+                auth_id
+            ));
+
+            // Create a token
+            let token_name = b"ACME";
+            let ticker = Ticker::try_from(&token_name[..]).unwrap();
+            let venue_counter = init(token_name, ticker, AccountKeyring::Alice.public());
+            let instruction_counter = Settlement::instruction_counter();
+            let alice_init_balance = Asset::balance_of(&ticker, alice_did);
+            let bob_init_balance = Asset::balance_of(&ticker, bob_did);
+            let amount = 100u128;
+            assert_ok!(Portfolio::move_portfolio_funds(
+                alice_signed.clone(),
+                PortfolioId::default_portfolio(alice_did),
+                PortfolioId::user_portfolio(alice_did, alice_num),
+                vec![MovePortfolioItem { ticker, amount }]
+            ));
+
+            // An instruction is created with multiple legs referencing multiple portfolios
+            assert_ok!(Settlement::add_instruction(
+                alice_signed.clone(),
+                venue_counter,
+                SettlementType::SettleOnAuthorization,
+                None,
+                vec![
+                    Leg {
+                        from: PortfolioId::user_portfolio(alice_did, alice_num),
+                        to: PortfolioId::default_portfolio(bob_did),
+                        asset: ticker,
+                        amount: amount
+                    },
+                    Leg {
+                        from: PortfolioId::default_portfolio(alice_did),
+                        to: PortfolioId::user_portfolio(bob_did, bob_num),
+                        asset: ticker,
+                        amount: amount
+                    }
+                ]
+            ));
+            assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
+            assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
+            assert_eq!(
+                Portfolio::default_portfolio_balance(alice_did, &ticker),
+                alice_init_balance - amount,
+            );
+            assert_eq!(
+                Portfolio::default_portfolio_balance(bob_did, &ticker),
+                bob_init_balance,
+            );
+            assert_eq!(
+                Portfolio::user_portfolio_balance(bob_did, bob_num, &ticker),
+                0,
+            );
+            assert_eq!(
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
+                0
+            );
+
+            // Alice approves the instruction from both of her portfolios
+            let mut set = BTreeSet::new();
+            set.insert(PortfolioId::default_portfolio(alice_did));
+            set.insert(PortfolioId::user_portfolio(alice_did, alice_num));
+            assert_ok!(Settlement::authorize_instruction(
+                alice_signed.clone(),
+                instruction_counter,
+                set.clone()
+            ));
+            assert_eq!(Asset::balance_of(&ticker, alice_did), alice_init_balance);
+            assert_eq!(Asset::balance_of(&ticker, bob_did), bob_init_balance);
+            assert_eq!(
+                Portfolio::default_portfolio_balance(alice_did, &ticker),
+                alice_init_balance - amount,
+            );
+            assert_eq!(
+                Portfolio::default_portfolio_balance(bob_did, &ticker),
+                bob_init_balance,
+            );
+            assert_eq!(
+                Portfolio::user_portfolio_balance(bob_did, bob_num, &ticker),
+                0
+            );
+            assert_eq!(
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
+                amount
+            );
+            assert_eq!(
+                Portfolio::locked_assets(
+                    PortfolioId::user_portfolio(alice_did, alice_num),
+                    &ticker
+                ),
+                amount
+            );
+
+            // Alice transfers custody of her portfolios but it won't affect any already approved instruction
+            let auth_id2 = Identity::add_auth(
+                alice_did,
+                Signatory::from(bob_did),
+                AuthorizationData::PortfolioCustody(PortfolioId::user_portfolio(
+                    alice_did, alice_num,
+                )),
+                None,
+            );
+            assert_ok!(Identity::accept_authorization(bob_signed.clone(), auth_id2));
+
+            // Bob fails to approve the instruction with both of his portfolios since he doesn't have custody for the second one
+            let mut set_bob = BTreeSet::new();
+            set_bob.insert(PortfolioId::default_portfolio(bob_did));
+            set_bob.insert(PortfolioId::user_portfolio(bob_did, bob_num));
+            assert_noop!(
+                Settlement::authorize_instruction(bob_signed.clone(), instruction_counter, set_bob),
+                PortfolioError::UnauthorizedCustodian
+            );
+
+            // Bob can approve instruction from the portfolio he has custody of
+            assert_ok!(Settlement::authorize_instruction(
+                bob_signed.clone(),
+                instruction_counter,
+                default_portfolio_btreeset(bob_did)
+            ));
+
+            // Alice fails to unauthorize the instruction from both her portfolios since she doesn't have the custody
+            assert_noop!(
+                Settlement::unauthorize_instruction(alice_signed.clone(), instruction_counter, set),
+                PortfolioError::UnauthorizedCustodian
+            );
+
+            // Alice can unauthorize instruction from the portfolio she has custody of
+            assert_ok!(Settlement::unauthorize_instruction(
+                alice_signed.clone(),
+                instruction_counter,
+                default_portfolio_btreeset(alice_did)
+            ));
+            assert_eq!(
+                Portfolio::locked_assets(PortfolioId::default_portfolio(alice_did), &ticker),
+                0
+            );
+
+            // Alice can authorize instruction from remaining portfolios since she has the custody
+            let mut set_final = BTreeSet::new();
+            set_final.insert(PortfolioId::default_portfolio(alice_did));
+            set_final.insert(PortfolioId::user_portfolio(bob_did, bob_num));
+            assert_ok!(Settlement::authorize_instruction(
+                alice_signed.clone(),
+                instruction_counter,
+                set_final
             ));
 
             // Instruction should've settled
