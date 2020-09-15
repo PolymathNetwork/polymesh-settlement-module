@@ -51,10 +51,10 @@ use codec::{Decode, Encode};
 use frame_support::{
     decl_error, decl_event, decl_module, decl_storage,
     dispatch::{DispatchError, DispatchResult, DispatchResultWithPostInfo},
-    ensure,
+    ensure, storage,
     traits::Get,
     weights::Weight,
-    IterableStorageDoubleMap,
+    IterableStorageDoubleMap, StorageHasher, Twox128,
 };
 use frame_system::{self as system, ensure_signed};
 use polymesh_primitives_derive::VecU8StrongTyped;
@@ -328,7 +328,7 @@ decl_event!(
     {
         /// A new venue has been created (did, venue_id, details, type)
         VenueCreated(IdentityId, u64, VenueDetails, VenueType),
-        /// Am existing venue has been updated (did, venue_id, details, type)
+        /// An existing venue has been updated (did, venue_id, details, type)
         VenueUpdated(IdentityId, u64, VenueDetails, VenueType),
         /// A new instruction has been created
         /// (did, venue_id, instruction_id, settlement_type, valid_from, legs)
@@ -404,7 +404,7 @@ decl_error! {
         SameSenderReceiver,
         /// Maximum numbers of legs in a instruction > `MaxLegsInAInstruction`.
         LegsCountExceededMaxLimit,
-        /// Portfolio in receipt does not match with portfolios provided bt he user
+        /// Portfolio in receipt does not match with portfolios provided by the user
         PortfolioMismatch
     }
 }
@@ -458,15 +458,14 @@ decl_module! {
         const MaxLegsInAInstruction: u32 = T::MaxLegsInAInstruction::get();
 
         fn on_runtime_upgrade() -> Weight {
-            use frame_support::migration::{StorageIterator, put_storage_value};
-            for (key, old_venue) in StorageIterator::<OldVenue>::new(b"Settlement", b"VenueInfo").drain() {
-                put_storage_value(b"Settlement", b"VenueInfo", &key, Venue {
-                    creator: old_venue.creator,
-                    instructions: old_venue.instructions,
-                    details: old_venue.details,
-                    venue_type: VenueType::Other
-                });
-            }
+            // Delete all settlement data
+            let prefix = Twox128::hash(b"Settlement");
+            storage::unhashed::kill_prefix(&prefix);
+
+            // Set venue counter and instruction counter to 1 so that the id(s) start from 1 instead of 0
+            <VenueCounter>::put(1);
+            <InstructionCounter>::put(1);
+
             1_000
         }
 
@@ -505,7 +504,7 @@ decl_module! {
         /// # Weight
         /// `200_000_000
         #[weight = 200_000_000]
-        pub fn edit_venue(origin, venue_id: u64, details: Option<VenueDetails>, venue_type: Option<VenueType>) -> DispatchResult {
+        pub fn update_venue(origin, venue_id: u64, details: Option<VenueDetails>, venue_type: Option<VenueType>) -> DispatchResult {
             let sender = ensure_signed(origin)?;
             let did = Context::current_identity_or::<Identity<T>>(&sender)?;
             // Check if a venue exists and the sender is the creator of the venue

@@ -139,7 +139,7 @@ fn venue_registration() {
             );
 
             // Editing venue details
-            assert_ok!(Settlement::edit_venue(
+            assert_ok!(Settlement::update_venue(
                 alice_signed,
                 venue_counter,
                 Some([0x01].into()),
