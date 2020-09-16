@@ -4,7 +4,6 @@ use super::{
 };
 
 use pallet_asset::{self as asset};
-use pallet_asset_types::AssetType;
 use pallet_balances as balances;
 use pallet_compliance_manager as compliance_manager;
 use pallet_identity as identity;
@@ -14,7 +13,7 @@ use pallet_settlement::{
     VenueType,
 };
 use polymesh_common_utilities::SystematicIssuers::Settlement as SettlementDID;
-use polymesh_primitives::{Claim, Condition, ConditionType, IdentityId, Ticker};
+use polymesh_primitives::{AssetType, Claim, Condition, ConditionType, IdentityId, Ticker};
 
 use codec::Encode;
 use frame_support::dispatch::GetDispatchInfo;
